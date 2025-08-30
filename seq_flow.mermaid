@@ -1,0 +1,91 @@
+flowchart TD
+    %% ========== MAIN DATA FLOW (Left to Right) ==========
+    
+    %% 1. Data Sources
+    Start([🚀 HFT System<br/>Startup]) --> Config[⚙️ CryptoConfig<br/>Paper Trading: ON<br/>Threshold: 20 bps]
+    
+    Config --> DataSources[📡 Market Data Sources]
+    DataSources --> CB[📊 Coinbase<br/>BTC-USD / ETH-USD]
+    DataSources --> BN[📊 Binance<br/>BTCUSDT / ETHUSDT]
+    
+    %% 2. Feed Processing
+    CB --> FeedHandler[🌐 MockFeedHandler<br/>Simulates WebSocket<br/>100ms Updates]
+    BN --> FeedHandler
+    
+    FeedHandler --> Sequencer[⏱️ SPSCSequencer<br/>Hardware Timestamps<br/>Message Ordering]
+    
+    %% 3. Ring Buffer Layer
+    Sequencer --> MarketBuffer[(📮 Market Data Buffer<br/>SPSCRingBuffer<1024><br/>~5ns Latency)]
+    
+    %% 4. Strategy Processing
+    MarketBuffer --> Strategy[🧠 ArbitrageStrategy<br/>Cross-Venue Analysis<br/>Spread Detection]
+    
+    Strategy --> Decision{💡 Arbitrage Found?<br/>Spread > 20 bps?}
+    
+    Decision -->|✅ YES| GenerateSignal[🎯 Generate Signal<br/>Expected Edge: X bps<br/>Strength: 0.0-1.0]
+    Decision -->|❌ NO| WaitNext[⏳ Wait Next Tick<br/>Continue Monitoring]
+    
+    WaitNext --> MarketBuffer
+    
+    %% 5. Signal Processing
+    GenerateSignal --> SignalBuffer[(📮 Signal Buffer<br/>SPSCRingBuffer<1024><br/>Trading Opportunities)]
+    
+    %% 6. Risk & Execution
+    SignalBuffer --> RiskMgr[🛡️ Risk Manager<br/>Position Limits<br/>Order Size Check]
+    
+    RiskMgr --> PaperTrade[📝 Paper Trading<br/>Simulated Execution<br/>No Real Money Risk]
+    
+    %% 7. Output & Loop
+    PaperTrade --> Output[📋 Console Output<br/>Strategy Status<br/>P&L Tracking<br/>Performance Metrics]
+    
+    Output --> MainLoop[🔄 Main Control Loop<br/>10ms Processing Cycle<br/>Continuous Operation]
+    
+    MainLoop --> MarketBuffer
+
+    %% ========== SUPPORTING INFORMATION ==========
+    
+    subgraph TradingPairs [" 💎 Trading Pairs "]
+        BTC[BTC/USD<br/>~$45,000<br/>Primary Pair]
+        ETH[ETH/USD<br/>~$3,000<br/>Secondary Pair]
+    end
+    
+    subgraph Venues [" 🏛️ Exchange Venues "]
+        CBPro[Coinbase Pro<br/>Sandbox Mode<br/>REST + WebSocket]
+        Binance[Binance<br/>Testnet Mode<br/>High Frequency]
+    end
+    
+    subgraph MessageFlow [" 📨 Message Types "]
+        MsgTick[MARKET_DATA_TICK<br/>Bid/Ask/Size/Volume]
+        MsgSignal[SIGNAL<br/>Arbitrage Opportunity]
+        MsgOrder[ORDER<br/>Buy/Sell Instructions]
+        MsgFill[FILL<br/>Execution Confirmation]
+    end
+    
+    subgraph Performance [" ⚡ System Performance "]
+        PerfRing[Ring Buffer<br/>~5ns latency]
+        PerfSeq[Sequencer<br/>~2ns overhead]
+        PerfStrat[Strategy<br/>&lt;1ms decision]
+        PerfTotal[End-to-End<br/>&lt;10ms total]
+    end
+    
+    subgraph RiskControls [" 🛡️ Risk Management "]
+        RiskPos[Max Position<br/>0.01 BTC/ETH]
+        RiskOrder[Order Size<br/>0.001 maximum]
+        RiskSpread[Min Spread<br/>20 bps threshold]
+        RiskMode[Paper Mode<br/>ENABLED]
+    end
+
+    %% ========== STYLING FOR BETTER VISUAL HIERARCHY ==========
+    
+    classDef startEnd fill:#ff6b6b,stroke:#fff,stroke-width:3px,color:#fff
+    classDef process fill:#4ecdc4,stroke:#fff,stroke-width:2px,color:#fff
+    classDef decision fill:#ffe66d,stroke:#333,stroke-width:2px,color:#333
+    classDef buffer fill:#a8e6cf,stroke:#333,stroke-width:2px,color:#333
+    classDef output fill:#ff8b94,stroke:#fff,stroke-width:2px,color:#fff
+    classDef config fill:#dda0dd,stroke:#fff,stroke-width:2px,color:#fff
+    
+    class Start,MainLoop startEnd
+    class Config,FeedHandler,Sequencer,Strategy,RiskMgr,PaperTrade config
+    class Decision decision
+    class MarketBuffer,SignalBuffer buffer
+    class Output,GenerateSignal output
