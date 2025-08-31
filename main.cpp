@@ -7,6 +7,8 @@
 #include "sequencer.hpp"
 #include "crypto_config.hpp"
 #include "feed_handler.hpp"
+#include "position_tracker.hpp"
+#include "enhanced_risk_manager.hpp"
 
 using namespace hft;
 
@@ -42,11 +44,21 @@ int main() {
         // Create sequencer for message ordering
         SPSCSequencer sequencer;
         
+        // Initialize position tracker and risk manager
+        PositionTracker position_tracker;
+        EnhancedRiskManager risk_manager(&position_tracker);
+        
+        std::cout << "🛡️ Enhanced risk management initialized\n";
+        std::cout << "📊 Position tracking enabled\n";
+        std::cout << "💾 Trade logging: trade_log.csv\n";
+        std::cout << "📋 Risk events: risk_events.csv\n\n";
+        
         // Initialize market data feed handler (simulated)
         MockFeedHandler feed_handler(market_data_buffer, sequencer);
         
-        // Initialize arbitrage strategy
-        ArbitrageStrategy strategy(market_data_buffer, signal_buffer, config);
+        // Initialize enhanced arbitrage strategy
+        ArbitrageStrategy strategy(market_data_buffer, signal_buffer, config, 
+                                 &position_tracker, &risk_manager);
         
         // Start market data feed
         feed_handler.start();
@@ -80,6 +92,8 @@ int main() {
             auto now = std::chrono::steady_clock::now();
             if (now - last_status_print >= std::chrono::seconds(5)) {
                 strategy.print_status();
+                position_tracker.print_status();
+                risk_manager.print_risk_status();
                 last_status_print = now;
                 
                 // Print performance stats

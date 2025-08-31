@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include "ring_buffer.hpp"
 #include "crypto_config.hpp"
+#include "position_tracker.hpp"
+#include "enhanced_risk_manager.hpp"
 
 namespace hft {
 
@@ -122,30 +124,32 @@ private:
 };
 
 /**
- * Simple arbitrage strategy for crypto MVP
+ * Enhanced arbitrage strategy with position tracking and risk management
  */
 class ArbitrageStrategy {
 private:
     SPSCRingBuffer<1024>& market_data_buffer_;
     SPSCRingBuffer<1024>& signal_buffer_;
     const CryptoConfig& config_;
+    PositionTracker* position_tracker_;
+    EnhancedRiskManager* risk_manager_;
     
     // Market state tracking
     std::unordered_map<SymbolId, MarketSnapshot> market_snapshots_;
     
-    // Position tracking (simplified for MVP)
-    struct Position {
-        double btc_position = 0.0;
-        double eth_position = 0.0;
-        double unrealized_pnl = 0.0;
-        double realized_pnl = 0.0;
-    } position_;
+    // Performance tracking
+    uint64_t signals_generated_ = 0;
+    uint64_t trades_executed_ = 0;
+    uint64_t trades_rejected_ = 0;
 
 public:
     ArbitrageStrategy(SPSCRingBuffer<1024>& market_buffer,
                      SPSCRingBuffer<1024>& signal_buffer,
-                     const CryptoConfig& config)
-        : market_data_buffer_(market_buffer), signal_buffer_(signal_buffer), config_(config) {}
+                     const CryptoConfig& config,
+                     PositionTracker* position_tracker,
+                     EnhancedRiskManager* risk_manager)
+        : market_data_buffer_(market_buffer), signal_buffer_(signal_buffer), 
+          config_(config), position_tracker_(position_tracker), risk_manager_(risk_manager) {}
     
     void process_market_data() {
         SequencedMessage msg;
@@ -154,16 +158,29 @@ public:
         while (market_data_buffer_.read(msg)) {
             if (msg.type == MessageType::MARKET_DATA_TICK) {
                 update_market_snapshot(msg);
+                
+                // Update position tracker with latest market prices
+                std::string exchange = venue_name(msg.venue);
+                std::string symbol = (msg.symbol_id == 1) ? "BTC/USD" : "ETH/USD";
+                double mid_price = (to_float_price(msg.market_data.bid_price) + 
+                                  to_float_price(msg.market_data.ask_price)) / 2.0;
+                position_tracker_->update_market_price(exchange, symbol, mid_price);
+                
                 check_arbitrage_opportunities(msg.symbol_id);
             }
         }
     }
     
     void print_status() const {
-        std::cout << "\n📊 Strategy Status:\n";
-        std::cout << "   BTC Position: " << position_.btc_position << "\n";
-        std::cout << "   ETH Position: " << position_.eth_position << "\n";
-        std::cout << "   Unrealized P&L: $" << std::fixed << std::setprecision(2) << position_.unrealized_pnl << "\n";
+        std::cout << "\n📊 Enhanced Strategy Status:\n";
+        std::cout << "   Signals Generated: " << signals_generated_ << "\n";
+        std::cout << "   Trades Executed: " << trades_executed_ << "\n";
+        std::cout << "   Trades Rejected: " << trades_rejected_ << "\n";
+        std::cout << "   Success Rate: " << std::fixed << std::setprecision(1) 
+                  << (signals_generated_ > 0 ? (100.0 * trades_executed_ / signals_generated_) : 0.0) << "%\n";
+        
+        // Show risk status
+        std::cout << "   Trading Halted: " << (risk_manager_->is_trading_halted() ? "YES" : "NO") << "\n";
         
         for (const auto& [symbol_id, snapshot] : market_snapshots_) {
             std::string symbol = (symbol_id == 1) ? "BTC" : "ETH";
@@ -209,21 +226,66 @@ private:
         if (opportunity.is_valid && 
             opportunity.spread_bps > config_.strategy.arbitrage_threshold * 10000) {
             
-            // Generate trading signal
-            SequencedMessage signal{};
-            signal.type = MessageType::SIGNAL;
-            signal.symbol_id = symbol_id;
-            signal.strategy_id = 1; // Arbitrage strategy
+            signals_generated_++;
             
-            signal.signal.signal_type = 1; // Arbitrage signal
-            signal.signal.strength = std::min(1.0f, static_cast<float>(opportunity.spread_bps / 100.0f));
-            signal.signal.target_price = (opportunity.buy_price + opportunity.sell_price) / 2;
-            signal.signal.confidence = 0.8f;
-            signal.signal.expected_edge = static_cast<float>(opportunity.spread_bps);
-            signal.signal.hold_time_ms = 1000; // 1 second expected hold
+            // Enhanced risk checks before signal generation
+            std::string buy_exchange = venue_name(opportunity.buy_venue);
+            std::string sell_exchange = venue_name(opportunity.sell_venue);
+            std::string symbol_str = (symbol_id == 1) ? "BTC/USD" : "ETH/USD";
             
-            signal_buffer_.write(signal);
+            // Determine trade quantities (conservative for MVP)
+            double trade_quantity = (symbol_id == 1) ? 0.001 : 0.01; // 0.001 BTC or 0.01 ETH
+            
+            // Check if we can execute both legs of the arbitrage
+            bool can_buy = risk_manager_->can_execute_trade(
+                buy_exchange, symbol_str, trade_quantity, opportunity.buy_price, opportunity.spread_bps);
+            bool can_sell = risk_manager_->can_execute_trade(
+                sell_exchange, symbol_str, -trade_quantity, opportunity.sell_price, opportunity.spread_bps);
+            
+            if (can_buy && can_sell) {
+                // Risk checks passed - generate trading signal
+                SequencedMessage signal{};
+                signal.type = MessageType::SIGNAL;
+                signal.symbol_id = symbol_id;
+                signal.strategy_id = 1; // Arbitrage strategy
+                
+                signal.signal.signal_type = 1; // Arbitrage signal
+                signal.signal.strength = std::min(1.0f, static_cast<float>(opportunity.spread_bps / 100.0f));
+                signal.signal.target_price = (opportunity.buy_price + opportunity.sell_price) / 2;
+                signal.signal.confidence = 0.8f;
+                signal.signal.expected_edge = static_cast<float>(opportunity.spread_bps);
+                signal.signal.hold_time_ms = 1000; // 1 second expected hold
+                
+                if (signal_buffer_.write(signal)) {
+                    // Simulate paper trade execution
+                    execute_paper_arbitrage(symbol_str, trade_quantity, 
+                                          opportunity.buy_price, opportunity.sell_price,
+                                          buy_exchange, sell_exchange, opportunity.spread_bps);
+                    trades_executed_++;
+                }
+            } else {
+                trades_rejected_++;
+                printf("❌ Arbitrage rejected by risk manager: %s %.1f bps\n", 
+                       symbol_str.c_str(), opportunity.spread_bps);
+            }
         }
+    }
+    
+    void execute_paper_arbitrage(const std::string& symbol, double quantity,
+                               double buy_price, double sell_price,
+                               const std::string& buy_exchange, const std::string& sell_exchange,
+                               double spread_bps) {
+        // Simulate simultaneous buy and sell orders
+        position_tracker_->add_trade(buy_exchange, symbol, quantity, buy_price);   // Buy
+        position_tracker_->add_trade(sell_exchange, symbol, -quantity, sell_price); // Sell
+        
+        double profit = quantity * (sell_price - buy_price);
+        printf("🎯 Arbitrage Signal: %.1f bps edge, strength: %.1f\n", 
+               spread_bps, std::min(1.0, spread_bps / 100.0));
+        printf("   📝 Paper trades: Buy %.6f %s @ $%.2f (%s), Sell @ $%.2f (%s)\n",
+               quantity, symbol.c_str(), buy_price, buy_exchange.c_str(), 
+               sell_price, sell_exchange.c_str());
+        printf("   💰 Expected profit: $%.2f\n", profit);
     }
     
     std::string venue_name(Venue venue) const {
