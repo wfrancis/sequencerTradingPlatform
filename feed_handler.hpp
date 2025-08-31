@@ -140,6 +140,33 @@ private:
             std::cerr << "⚠️  Market data buffer full\n";
         }
     }
+    
+    bool validate_price(const std::string& symbol, double& price) {
+        auto& limits = price_limits_[symbol];
+        
+        // Absolute bounds check
+        if (price < limits.min_price || price > limits.max_price) {
+            std::cerr << "❌ Price out of bounds: " << symbol << " = " << price << std::endl;
+            return false;
+        }
+        
+        // Rate of change check
+        if (last_valid_prices_.count(symbol)) {
+            double last_price = last_valid_prices_[symbol];
+            double change_pct = std::abs((price - last_price) / last_price);
+            
+            if (change_pct > limits.max_change_percent) {
+                std::cerr << "⚠️ Price change too large: " << symbol << " " 
+                         << (change_pct * 100) << "% change" << std::endl;
+                // Clip to max change
+                price = last_price * (1.0 + 
+                    (price > last_price ? limits.max_change_percent : -limits.max_change_percent));
+            }
+        }
+        
+        last_valid_prices_[symbol] = price;
+        return true;
+    }
 };
 
 /**
@@ -308,33 +335,6 @@ private:
     }
     
 private:
-    bool validate_price(const std::string& symbol, double& price) {
-        auto& limits = price_limits_[symbol];
-        
-        // Absolute bounds check
-        if (price < limits.min_price || price > limits.max_price) {
-            std::cerr << "❌ Price out of bounds: " << symbol << " = " << price << std::endl;
-            return false;
-        }
-        
-        // Rate of change check
-        if (last_valid_prices_.count(symbol)) {
-            double last_price = last_valid_prices_[symbol];
-            double change_pct = std::abs((price - last_price) / last_price);
-            
-            if (change_pct > limits.max_change_percent) {
-                std::cerr << "⚠️ Price change too large: " << symbol << " " 
-                         << (change_pct * 100) << "% change" << std::endl;
-                // Clip to max change
-                price = last_price * (1.0 + 
-                    (price > last_price ? limits.max_change_percent : -limits.max_change_percent));
-            }
-        }
-        
-        last_valid_prices_[symbol] = price;
-        return true;
-    }
-    
     std::string venue_name(Venue venue) const {
         switch (venue) {
             case Venue::COINBASE: return "Coinbase";

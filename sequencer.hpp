@@ -540,6 +540,27 @@ public:
             .tsc_value = tsc
         };
     }
+
+private:
+    uint64_t calculate_median_frequency(
+        const std::vector<uint64_t>& tsc_deltas,
+        const std::vector<uint64_t>& time_deltas) {
+        
+        std::vector<uint64_t> frequencies;
+        for (size_t i = 0; i < tsc_deltas.size(); ++i) {
+            if (time_deltas[i] > 0) {
+                uint64_t freq = (tsc_deltas[i] * 1000000000ULL) / time_deltas[i];
+                frequencies.push_back(freq);
+            }
+        }
+        
+        if (frequencies.empty()) {
+            return 2400000000ULL; // Fallback to 2.4 GHz
+        }
+        
+        std::sort(frequencies.begin(), frequencies.end());
+        return frequencies[frequencies.size() / 2]; // Return median
+    }
 };
 
 /**

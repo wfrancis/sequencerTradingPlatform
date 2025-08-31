@@ -135,7 +135,8 @@ private:
         
         // Timestamp
         auto time_point = std::chrono::system_clock::time_point(
-            std::chrono::nanoseconds(entry.timestamp_ns));
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                std::chrono::nanoseconds(entry.timestamp_ns)));
         auto time_t = std::chrono::system_clock::to_time_t(time_point);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::nanoseconds(entry.timestamp_ns) % 1000000000).count();
@@ -170,7 +171,11 @@ public:
         return instance;
     }
     
-    void init(const LoggerConfig& config = LoggerConfig{}) {
+    void init() {
+        init(LoggerConfig{});
+    }
+    
+    void init(const LoggerConfig& config) {
         config_ = config;
         ensure_directories();
         

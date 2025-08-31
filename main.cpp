@@ -12,8 +12,11 @@
 #include "logger.hpp"
 #include "connection_manager.hpp"
 #include "network_simulator.hpp"
+#include "real_time_monitor.hpp"
+#include "monitoring_integration.hpp"
 
 using namespace hft;
+using namespace hft::monitoring;
 
 // Global flag for graceful shutdown
 std::atomic<bool> running{true};
@@ -69,9 +72,27 @@ int main() {
         hft::NetworkSimulator network_sim(100.0, 20.0, 0.001);
         LOG_INFO("Network simulator initialized (100us latency, 20us jitter, 0.1% loss)");
         
+        // Initialize monitoring system
+        MonitoringThresholds thresholds;
+        thresholds.max_latency_ns = 50000000ULL;  // 50ms target
+        thresholds.max_spread_bps = 500.0;        // 50bps alert threshold
+        thresholds.min_profit_threshold = -500.0; // $500 max loss before emergency stop
+        
+        RealTimeMonitor monitor(thresholds);
+        MonitoringIntegration monitor_integration(monitor);
+        
+        // Set up alert callback
+        monitor.set_alert_callback([](const Alert& alert) {
+            std::cout << "🚨 " << alert.to_string() << "\n";
+        });
+        
         // Initialize position tracker and risk manager
         PositionTracker position_tracker;
         EnhancedRiskManager risk_manager(&position_tracker);
+        
+        // Create monitored wrappers
+        MonitoredPositionTracker monitored_position_tracker(position_tracker, monitor_integration);
+        MonitoredRiskManager monitored_risk_manager(risk_manager, monitor_integration);
         
         std::cout << "🛡️ Enhanced risk management initialized\n";
         std::cout << "📊 Position tracking enabled\n";
@@ -80,28 +101,46 @@ int main() {
         
         // Initialize market data feed handler (simulated)
         MockFeedHandler feed_handler(market_data_buffer, sequencer);
+        MonitoredFeedHandler monitored_feed_handler(feed_handler, monitor_integration);
         
         // Initialize enhanced arbitrage strategy
         ArbitrageStrategy strategy(market_data_buffer, signal_buffer, config, 
                                  &position_tracker, &risk_manager);
+        MonitoredArbitrageStrategy monitored_strategy(strategy, monitor_integration, monitor);
         
-        // Start market data feed
+        // Start market data feed and monitoring
         feed_handler.start();
+        monitor.start_monitoring();
         
         // Main trading loop
         auto start_time = std::chrono::steady_clock::now();
         auto last_status_print = start_time;
         
-        std::cout << "✅ Trading loop started\n\n";
+        std::cout << "✅ Trading loop started\n";
+        std::cout << "📊 Real-time monitoring active\n";
+        std::cout << "🎯 Latency target: <50ms\n";
+        std::cout << "🛑 Emergency stop: Ctrl+C or automatic triggers\n\n";
         
         while (running.load()) {
-            // Process market data and look for arbitrage opportunities
-            strategy.process_market_data();
+            // Check for emergency stop conditions
+            if (monitor.is_emergency_stop()) {
+                std::cout << "🛑 EMERGENCY STOP TRIGGERED: " << monitor.get_emergency_reason() << "\n";
+                break;
+            }
             
-            // Process any generated signals
+            // Process market data and look for arbitrage opportunities with monitoring
+            {
+                auto latency_tracker = monitor_integration.track_latency("main_loop_iteration");
+                monitored_strategy.process_market_data();
+            }
+            
+            // Process any generated signals with monitoring
             SequencedMessage signal;
             while (signal_buffer.read(signal)) {
                 if (signal.type == MessageType::SIGNAL) {
+                    // Record arbitrage signal metrics
+                    monitored_strategy.record_arbitrage_signal(signal.signal.expected_edge);
+                    
                     std::cout << "🎯 Arbitrage Signal: " 
                               << std::fixed << std::setprecision(1)
                               << signal.signal.expected_edge << " bps edge, "
@@ -109,16 +148,27 @@ int main() {
                     
                     if (config.strategy.paper_trading) {
                         std::cout << "   📝 Paper trade executed (simulated)\n";
+                        // Simulate realistic P&L for monitoring
+                        double simulated_pnl = (signal.signal.expected_edge / 10000.0) * 1000.0; // $1000 notional
+                        monitor.record_trade(simulated_pnl, 2.0); // $2 fee estimate
                     }
                 }
+                
+                // Update monitoring with message processing
+                monitor.component_message_processed("signal_processing");
             }
             
-            // Print status every 5 seconds
+            // Update component heartbeats
+            monitor.component_heartbeat("main_loop");
+            
+            // Print status every 10 seconds (monitoring dashboard updates every 1s)
             auto now = std::chrono::steady_clock::now();
-            if (now - last_status_print >= std::chrono::seconds(5)) {
-                strategy.print_status();
-                position_tracker.print_status();
-                risk_manager.print_risk_status();
+            if (now - last_status_print >= std::chrono::seconds(10)) {
+                // Print traditional status (monitoring dashboard shows real-time metrics)
+                std::cout << "\n📊 TRADITIONAL STATUS UPDATE:\n";
+                monitored_strategy.print_status();
+                monitored_position_tracker.print_status();
+                monitored_risk_manager.print_risk_status();
                 conn_manager.print_status();
                 last_status_print = now;
                 
@@ -126,10 +176,22 @@ int main() {
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time);
                 std::cout << "   ⏱️  Runtime: " << elapsed.count() << "s\n";
                 std::cout << "   📊 Market data available: " << market_data_buffer.available() << "\n";
-                std::cout << "   📈 Signals generated: " << signal_buffer.available() << "\n\n";
+                std::cout << "   📈 Signals generated: " << signal_buffer.available() << "\n";
                 
-                LOG_INFO("Status update - Runtime: {}s, Market data: {}, Signals: {}", 
-                        elapsed.count(), market_data_buffer.available(), signal_buffer.available());
+                // Show key monitoring metrics
+                const auto* latency_metrics = monitor.get_latency_metrics("main_loop_iteration");
+                if (latency_metrics && latency_metrics->sample_count > 0) {
+                    std::cout << "   ⚡ Main loop latency: " << (latency_metrics->avg_ns / 1000000.0) 
+                              << "ms avg, " << (latency_metrics->p95_ns / 1000000.0) << "ms p95\n";
+                }
+                
+                const auto& pnl_metrics = monitor.get_profitability_metrics();
+                std::cout << "   💰 P&L: $" << pnl_metrics.net_profit 
+                          << " (" << (pnl_metrics.get_win_rate() * 100) << "% win rate)\n\n";
+                
+                LOG_INFO("Status update - Runtime: {}s, Market data: {}, Signals: {}, P&L: ${:.2f}", 
+                        elapsed.count(), market_data_buffer.available(), 
+                        signal_buffer.available(), pnl_metrics.net_profit);
             }
             
             // Small sleep to prevent excessive CPU usage on laptop
@@ -137,6 +199,9 @@ int main() {
         }
         
         // Cleanup
+        std::cout << "\n🛑 Shutting down systems...\n";
+        monitor.trigger_emergency_stop("Graceful shutdown requested");
+        monitor.stop_monitoring();
         feed_handler.stop();
         conn_manager.stop();
         
@@ -145,9 +210,25 @@ int main() {
         
         LOG_INFO("HFT system shutdown complete - Runtime: {}s", total_runtime.count());
         
+        // Final monitoring report
+        const auto& final_pnl = monitor.get_profitability_metrics();
+        auto recent_alerts = monitor.get_recent_alerts(5);
+        
         std::cout << "\n✅ HFT MVP stopped gracefully\n";
         std::cout << "📊 Total runtime: " << total_runtime.count() << " seconds\n";
-        std::cout << "🎯 Thank you for testing the HFT system!\n";
+        std::cout << "💰 Final P&L: $" << final_pnl.net_profit 
+                  << " (" << final_pnl.total_trades << " trades, " 
+                  << (final_pnl.get_win_rate() * 100) << "% win rate)\n";
+        std::cout << "📈 Max drawdown: $" << final_pnl.max_drawdown << "\n";
+        
+        if (!recent_alerts.empty()) {
+            std::cout << "🚨 Final alerts (" << recent_alerts.size() << "):" << "\n";
+            for (const auto& alert : recent_alerts) {
+                std::cout << "   " << alert.to_string() << "\n";
+            }
+        }
+        
+        std::cout << "🎯 Thank you for testing the HFT monitoring system!\n";
         
         // Shutdown logger last
         hft::Logger::instance().shutdown();

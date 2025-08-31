@@ -21,6 +21,13 @@ set(HEADER_FILES
     sequencer.hpp
     crypto_config.hpp
     feed_handler.hpp
+    position_tracker.hpp
+    enhanced_risk_manager.hpp
+    logger.hpp
+    connection_manager.hpp
+    network_simulator.hpp
+    real_time_monitor.hpp
+    monitoring_integration.hpp
 )
 
 # Simulator header files
