@@ -114,6 +114,16 @@ struct MarketSnapshot {
     uint64_t timestamp_ns;
     SymbolId symbol_id;
     
+    struct VenueDepth {
+        static constexpr size_t MAX_DEPTH = 5;
+        Price bid_prices[MAX_DEPTH] = {0};
+        Quantity bid_sizes[MAX_DEPTH] = {0};
+        Price ask_prices[MAX_DEPTH] = {0};
+        Quantity ask_sizes[MAX_DEPTH] = {0};
+        uint8_t bid_depth = 0;
+        uint8_t ask_depth = 0;
+    };
+    
     struct VenueData {
         Price bid_price = 0;
         Quantity bid_size = 0;
@@ -124,6 +134,7 @@ struct MarketSnapshot {
     };
     
     std::unordered_map<Venue, VenueData> venues;
+    std::unordered_map<Venue, VenueDepth> venue_depths;
     
     /**
      * Calculate arbitrage opportunity
@@ -136,6 +147,10 @@ struct MarketSnapshot {
         double spread_bps;
         Quantity max_quantity;
         bool is_valid;
+        // Enhanced arbitrage calculation with depth
+        Quantity executable_quantity;  // Based on depth
+        double weighted_avg_buy_price;
+        double weighted_avg_sell_price;
     };
     
     ArbitrageOpportunity find_arbitrage() const {
@@ -166,6 +181,70 @@ struct MarketSnapshot {
                             .max_quantity = std::min(data1.ask_size, data2.bid_size),
                             .is_valid = true
                         };
+                    }
+                }
+            }
+        }
+        
+        return best_opp;
+    }
+    
+    ArbitrageOpportunity find_arbitrage_with_depth() const {
+        ArbitrageOpportunity best_opp{};
+        best_opp.is_valid = false;
+        best_opp.spread_bps = 0.0;
+        
+        // Check all venue pairs with depth consideration
+        for (const auto& [venue1, data1] : venues) {
+            for (const auto& [venue2, data2] : venues) {
+                if (venue1 == venue2 || data1.is_stale || data2.is_stale) continue;
+                
+                // Get depth data if available
+                auto depth1_it = venue_depths.find(venue1);
+                auto depth2_it = venue_depths.find(venue2);
+                
+                if (depth1_it != venue_depths.end() && depth2_it != venue_depths.end()) {
+                    const auto& depth1 = depth1_it->second;
+                    const auto& depth2 = depth2_it->second;
+                    
+                    // Calculate executable quantity based on depth
+                    Quantity exec_qty = 0;
+                    double weighted_buy = 0.0, weighted_sell = 0.0;
+                    double total_buy_cost = 0.0, total_sell_revenue = 0.0;
+                    
+                    // Match ask levels from venue1 with bid levels from venue2
+                    for (size_t i = 0; i < depth1.ask_depth && i < depth2.bid_depth; ++i) {
+                        if (depth2.bid_prices[i] > depth1.ask_prices[i]) {
+                            Quantity level_qty = std::min(depth1.ask_sizes[i], depth2.bid_sizes[i]);
+                            exec_qty += level_qty;
+                            
+                            total_buy_cost += to_float_price(depth1.ask_prices[i]) * to_float_price(level_qty);
+                            total_sell_revenue += to_float_price(depth2.bid_prices[i]) * to_float_price(level_qty);
+                        }
+                    }
+                    
+                    if (exec_qty > 0) {
+                        weighted_buy = total_buy_cost / to_float_price(exec_qty);
+                        weighted_sell = total_sell_revenue / to_float_price(exec_qty);
+                        
+                        double spread = weighted_sell - weighted_buy;
+                        double mid_price = (weighted_buy + weighted_sell) / 2.0;
+                        double spread_bps = (spread / mid_price) * 10000.0;
+                        
+                        if (spread_bps > best_opp.spread_bps) {
+                            best_opp = {
+                                .buy_venue = venue1,
+                                .sell_venue = venue2,
+                                .buy_price = to_fixed_price(weighted_buy),
+                                .sell_price = to_fixed_price(weighted_sell),
+                                .spread_bps = spread_bps,
+                                .max_quantity = exec_qty,
+                                .is_valid = true,
+                                .executable_quantity = exec_qty,
+                                .weighted_avg_buy_price = weighted_buy,
+                                .weighted_avg_sell_price = weighted_sell
+                            };
+                        }
                     }
                 }
             }

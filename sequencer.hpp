@@ -7,6 +7,8 @@
 #include <chrono>
 #include <thread>
 #include <type_traits>
+#include <vector>
+#include <algorithm>
 #ifdef HAS_NUMA
 #include <numa.h>
 #endif
@@ -400,6 +402,10 @@ private:
     uint64_t tsc_reference_;
     uint64_t wall_time_reference_ns_;
 
+    // Calibration state
+    std::atomic<bool> calibrated_{false};
+    static constexpr size_t CALIBRATION_SAMPLES = 100;
+
     /**
      * Read Time Stamp Counter (Cross-platform)
      *
@@ -451,11 +457,31 @@ public:
      * Determines TSC frequency for accurate time conversion
      */
     void calibrate() {
-        // Implementation would measure TSC frequency
-        // This is simplified - real implementation would be more robust
-        tsc_frequency_ = 2400000000ULL; // 2.4 GHz typical
+        // Method 1: Use CPU frequency from /proc/cpuinfo (Linux)
+        // Method 2: Measure against steady_clock
+        std::vector<uint64_t> tsc_samples;
+        std::vector<uint64_t> time_samples;
+        
+        for (size_t i = 0; i < CALIBRATION_SAMPLES; ++i) {
+            auto start_time = std::chrono::steady_clock::now();
+            uint64_t start_tsc = rdtsc();
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            
+            auto end_time = std::chrono::steady_clock::now();
+            uint64_t end_tsc = rdtsc();
+            
+            tsc_samples.push_back(end_tsc - start_tsc);
+            time_samples.push_back(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    end_time - start_time).count());
+        }
+        
+        // Calculate median frequency
+        tsc_frequency_ = calculate_median_frequency(tsc_samples, time_samples);
         tsc_reference_ = rdtsc();
-        wall_time_reference_ns_ = 0;
+        wall_time_reference_ns_ = std::chrono::steady_clock::now().time_since_epoch().count();
+        calibrated_.store(true);
     }
 
     /**
@@ -685,6 +711,27 @@ public:
 
         if (takers == 0) return 0.0;
         return static_cast<double>(makers) / static_cast<double>(takers);
+    }
+
+private:
+    uint64_t calculate_median_frequency(
+        const std::vector<uint64_t>& tsc_deltas,
+        const std::vector<uint64_t>& time_deltas) {
+        
+        std::vector<uint64_t> frequencies;
+        for (size_t i = 0; i < tsc_deltas.size(); ++i) {
+            if (time_deltas[i] > 0) {
+                uint64_t freq = (tsc_deltas[i] * 1000000000ULL) / time_deltas[i];
+                frequencies.push_back(freq);
+            }
+        }
+        
+        if (frequencies.empty()) {
+            return 2400000000ULL; // Fallback to 2.4 GHz
+        }
+        
+        std::sort(frequencies.begin(), frequencies.end());
+        return frequencies[frequencies.size() / 2]; // Return median
     }
 };
 

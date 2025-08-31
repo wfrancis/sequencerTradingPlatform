@@ -68,8 +68,8 @@ private:
     PositionTracker* position_tracker_;
     
     // Circuit breaker state
-    std::atomic<bool> circuit_breaker_active_{false};
-    std::atomic<uint64_t> circuit_breaker_trigger_time_{0};
+    mutable std::atomic<bool> circuit_breaker_active_{false};
+    mutable std::atomic<uint64_t> circuit_breaker_trigger_time_{0};
     std::atomic<bool> emergency_stop_active_{false};
     
     // Rate limiting
@@ -122,17 +122,19 @@ private:
     }
     
     bool is_circuit_breaker_cooling_down() const {
-        if (!circuit_breaker_active_) return false;
+        if (!circuit_breaker_active_.load(std::memory_order_acquire)) {
+            return false;
+        }
         
         auto current_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::high_resolution_clock::now().time_since_epoch()).count();
         
-        auto elapsed_ns = current_time - circuit_breaker_trigger_time_;
+        auto elapsed_ns = current_time - circuit_breaker_trigger_time_.load(std::memory_order_acquire);
         auto elapsed_seconds = elapsed_ns / 1000000000ULL;
         
         if (elapsed_seconds >= limits_.circuit_breaker_cooldown_seconds) {
-            // Reset circuit breaker
-            const_cast<std::atomic<bool>&>(circuit_breaker_active_) = false;
+            // Properly reset using atomic store
+            circuit_breaker_active_.store(false, std::memory_order_release);
             printf("✅ Circuit breaker reset - trading resumed\n");
             return false;
         }

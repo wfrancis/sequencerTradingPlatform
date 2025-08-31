@@ -20,17 +20,7 @@
 
 namespace hft {
 
-/**
- * Cross-platform high-resolution timestamp function
- */
-inline uint64_t get_timestamp() noexcept {
-#ifdef HAS_X86_INTRINSICS
-    return __builtin_ia32_rdtsc();
-#else
-    auto now = std::chrono::high_resolution_clock::now();
-    return static_cast<uint64_t>(now.time_since_epoch().count());
-#endif
-}
+// Use standardized timing function from messages.hpp
 
 /**
  * Single Producer Single Consumer Ring Buffer
@@ -137,7 +127,7 @@ public:
         if (sequencer_) {
             slot = msg;
             slot.sequence = sequencer_->next();
-            slot.timestamp_ns = get_timestamp();
+            slot.timestamp_ns = get_timestamp_ns();
         } else {
             slot = msg;
         }
@@ -177,7 +167,7 @@ public:
         // Set sequence and timestamp
         msg.sequence = sequence;
         if (msg.timestamp_ns == 0) {
-            msg.timestamp_ns = get_timestamp();
+            msg.timestamp_ns = get_timestamp_ns();
         }
 
         buffer_[current_write & MASK] = msg;
@@ -216,7 +206,7 @@ public:
         }
 
         // Copy messages
-        const uint64_t timestamp = get_timestamp();
+        const uint64_t timestamp = get_timestamp_ns();
         for (size_t i = 0; i < to_write; ++i) {
             SequencedMessage& slot = buffer_[(current_write + i) & MASK];
             slot = msgs[i];
@@ -415,50 +405,36 @@ public:
     /**
      * Write a message (Producer side - thread safe)
      *
-     * Multiple threads can call this concurrently
+     * Multiple threads can call this concurrently using two-phase commit
      *
      * @param msg Message to write
      * @return true if successful, false if buffer full
      */
     [[gnu::hot]]
     bool write(const SequencedMessage& msg) noexcept {
-        // Claim a slot atomically
-        const uint64_t slot = write_claim_.fetch_add(1, std::memory_order_acq_rel);
-
-        // Check if we have space (conservative check)
-        const uint64_t read = read_pos_.load(std::memory_order_acquire);
-        if (slot - read >= SIZE) {
-            // Buffer full - we claimed a slot we can't use
-            // In production, might want to handle this better
-            return false;
-        }
-
-        // Write message to claimed slot
+        // Phase 1: Reserve slot
+        uint64_t slot;
+        uint64_t read_pos;
+        
+        do {
+            slot = write_claim_.load(std::memory_order_acquire);
+            read_pos = read_pos_.load(std::memory_order_acquire);
+            
+            if (slot - read_pos >= SIZE) {
+                return false; // Buffer full
+            }
+        } while (!write_claim_.compare_exchange_weak(
+            slot, slot + 1,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire));
+        
+        // Phase 2: Write and commit
         const uint64_t index = slot & MASK;
         buffer_[index] = msg;
-
-        // Mark slot as committed
         committed_[index].store(1, std::memory_order_release);
-
-        // Try to advance commit pointer if we're next in line
-        uint64_t expected_commit = slot;
-        if (write_commit_.compare_exchange_strong(
-                expected_commit, slot + 1,
-                std::memory_order_acq_rel,
-                std::memory_order_relaxed)) {
-
-            // We were next - scan forward for more completed slots
-            uint64_t next = slot + 1;
-            while ((next & MASK) < SIZE &&
-                   committed_[next & MASK].load(std::memory_order_acquire) == 1) {
-                committed_[next & MASK].store(0, std::memory_order_relaxed);
-                next++;
-            }
-
-            // Update commit pointer to highest contiguous commit
-            write_commit_.store(next, std::memory_order_release);
-        }
-
+        
+        // Advance commit pointer if possible
+        advance_commit_pointer(slot);
         return true;
     }
 
@@ -492,6 +468,22 @@ public:
         read_pos_.store(current_read + 1, std::memory_order_release);
 
         return true;
+    }
+
+private:
+    void advance_commit_pointer(uint64_t slot) noexcept {
+        uint64_t expected = slot;
+        if (write_commit_.compare_exchange_strong(
+                expected, slot + 1,
+                std::memory_order_acq_rel)) {
+            // Scan forward for more commits
+            uint64_t next = slot + 1;
+            while (next < write_claim_.load(std::memory_order_acquire) &&
+                   committed_[next & MASK].load(std::memory_order_acquire)) {
+                write_commit_.store(++next, std::memory_order_release);
+                committed_[(next - 1) & MASK].store(0, std::memory_order_relaxed);
+            }
+        }
     }
 };
 

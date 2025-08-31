@@ -106,6 +106,30 @@ private:
     mutable std::mutex mutex_;
     std::atomic<bool> logging_enabled_{true};
     
+    // Slippage modeling
+    struct SlippageModel {
+        double linear_impact = 0.0001;    // 1 bp per unit
+        double square_root_impact = 0.001; // Square root market impact
+        double temporary_impact = 0.0005;  // Temporary price impact
+        
+        double calculate_slippage(double quantity, double avg_volume, 
+                                 double spread, bool is_taker) const {
+            double participation_rate = std::abs(quantity) / avg_volume;
+            double permanent_impact = linear_impact * participation_rate + 
+                                     square_root_impact * std::sqrt(participation_rate);
+            double total_impact = permanent_impact;
+            
+            if (is_taker) {
+                total_impact += spread / 2.0 + temporary_impact;
+            }
+            
+            return total_impact;
+        }
+    };
+    
+    std::unordered_map<std::string, SlippageModel> slippage_models_;
+    std::unordered_map<std::string, double> average_volumes_;
+    
     void log_trade(const std::string& exchange, const std::string& symbol, 
                    double quantity, double price, const std::string& side) {
         if (!logging_enabled_) return;
@@ -129,6 +153,14 @@ public:
         // Initialize exchange balances
         balances_["COINBASE"] = ExchangeBalance{};
         balances_["BINANCE"] = ExchangeBalance{};
+        
+        // Initialize slippage models
+        slippage_models_["BTC/USD"] = SlippageModel{};
+        slippage_models_["ETH/USD"] = SlippageModel{};
+        
+        // Initialize average volumes (simplified estimates)
+        average_volumes_["BTC/USD"] = 100.0;  // 100 BTC average volume
+        average_volumes_["ETH/USD"] = 1000.0; // 1000 ETH average volume
         
         // Create trade log header
         std::ofstream log_file("trade_log.csv");
@@ -169,6 +201,20 @@ public:
         
         // Update performance metrics
         update_performance_metrics();
+    }
+    
+    void add_trade_with_slippage(const std::string& exchange, 
+                                 const std::string& symbol,
+                                 double quantity, 
+                                 double quoted_price,
+                                 bool is_taker = true) {
+        double slippage = slippage_models_[symbol].calculate_slippage(
+            quantity, average_volumes_[symbol], 0.001, is_taker);
+        
+        double executed_price = quoted_price * (1.0 + 
+            (quantity > 0 ? slippage : -slippage));
+        
+        add_trade(exchange, symbol, quantity, executed_price);
     }
     
     Position get_position(const std::string& exchange, const std::string& symbol) const {

@@ -9,6 +9,9 @@
 #include "feed_handler.hpp"
 #include "position_tracker.hpp"
 #include "enhanced_risk_manager.hpp"
+#include "logger.hpp"
+#include "connection_manager.hpp"
+#include "network_simulator.hpp"
 
 using namespace hft;
 
@@ -30,6 +33,14 @@ int main() {
     signal(SIGTERM, signal_handler);
     
     try {
+        // Initialize logging
+        hft::Logger::instance().init();
+        LOG_INFO("HFT System starting");
+        
+        // Calibrate TSC
+        hft::TSCTimer::calibrate();
+        LOG_INFO("TSC calibration completed");
+        
         // Initialize configuration
         CryptoConfig config;
         std::cout << "⚙️  Configuration loaded:\n";
@@ -43,6 +54,20 @@ int main() {
         
         // Create sequencer for message ordering
         SPSCSequencer sequencer;
+        
+        // Initialize connection manager
+        hft::ConnectionManager conn_manager;
+        conn_manager.start();
+        LOG_INFO("Connection manager started");
+        
+        // Connect to exchanges
+        conn_manager.connect(hft::Venue::COINBASE);
+        conn_manager.connect(hft::Venue::BINANCE);
+        LOG_INFO("Connected to exchanges");
+        
+        // Initialize network simulator for testing
+        hft::NetworkSimulator network_sim(100.0, 20.0, 0.001);
+        LOG_INFO("Network simulator initialized (100us latency, 20us jitter, 0.1% loss)");
         
         // Initialize position tracker and risk manager
         PositionTracker position_tracker;
@@ -94,6 +119,7 @@ int main() {
                 strategy.print_status();
                 position_tracker.print_status();
                 risk_manager.print_risk_status();
+                conn_manager.print_status();
                 last_status_print = now;
                 
                 // Print performance stats
@@ -101,6 +127,9 @@ int main() {
                 std::cout << "   ⏱️  Runtime: " << elapsed.count() << "s\n";
                 std::cout << "   📊 Market data available: " << market_data_buffer.available() << "\n";
                 std::cout << "   📈 Signals generated: " << signal_buffer.available() << "\n\n";
+                
+                LOG_INFO("Status update - Runtime: {}s, Market data: {}, Signals: {}", 
+                        elapsed.count(), market_data_buffer.available(), signal_buffer.available());
             }
             
             // Small sleep to prevent excessive CPU usage on laptop
@@ -109,13 +138,19 @@ int main() {
         
         // Cleanup
         feed_handler.stop();
+        conn_manager.stop();
         
         auto total_runtime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time);
         
+        LOG_INFO("HFT system shutdown complete - Runtime: {}s", total_runtime.count());
+        
         std::cout << "\n✅ HFT MVP stopped gracefully\n";
         std::cout << "📊 Total runtime: " << total_runtime.count() << " seconds\n";
         std::cout << "🎯 Thank you for testing the HFT system!\n";
+        
+        // Shutdown logger last
+        hft::Logger::instance().shutdown();
         
     } catch (const std::exception& e) {
         std::cerr << "❌ Error: " << e.what() << std::endl;

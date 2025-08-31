@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <chrono>
+#include <atomic>
 
 namespace hft {
 
@@ -17,6 +19,7 @@ enum class MessageType : uint8_t {
     TRADE = 2,                  // Trade occurred
     IMBALANCE = 3,              // Order imbalance indicator
     AUCTION = 4,                // Auction message
+    ORDER_BOOK_DEPTH = 5,      // Full depth update
 
     // Order Management Messages (10-19)
     NEW_ORDER = 10,             // Send new order
@@ -131,7 +134,25 @@ using StrategyId = uint16_t;    // Strategy identifier
 
 // Constants for fixed-point arithmetic
 constexpr uint64_t PRICE_MULTIPLIER = 100000000ULL;     // 10^8 for 8 decimals
-constexpr uint64_t QUANTITY_MULTIPLIER = 100000000ULL;  // 10^8 for 8 decimals
+const uint64_t QUANTITY_MULTIPLIER = 100000000ULL;  // 10^8 for 8 decimals
+
+// Unified timestamp function returning nanoseconds
+inline uint64_t get_timestamp_ns() noexcept {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()
+    ).count();
+}
+
+// TSC to nanoseconds converter (requires calibration)
+class TSCTimer {
+private:
+    static std::atomic<uint64_t> tsc_to_ns_multiplier_;
+    static std::atomic<uint64_t> tsc_to_ns_shift_;
+    
+public:
+    static uint64_t tsc_to_ns(uint64_t tsc);
+    static void calibrate();
+};
 
 /**
  * Convert floating point price to fixed point
@@ -236,6 +257,15 @@ struct alignas(64) SequencedMessage {
             uint32_t _padding;
         } risk_limit;
 
+        // Order book depth data
+        struct {
+            Price levels[5];      // Top 5 price levels
+            Quantity sizes[5];    // Sizes at each level
+            uint8_t bid_levels;   // Number of bid levels
+            uint8_t ask_levels;   // Number of ask levels
+            uint16_t _padding;
+        } order_book_depth;
+
         // Raw payload for custom messages
         uint8_t raw_payload[32];
     };
@@ -269,5 +299,20 @@ static_assert(sizeof(SequencedMessage) == 64,
 static_assert(sizeof(SequencedMessage) <= 128,
               "SequencedMessage should be <= 128 bytes for cache efficiency");
 #endif
+
+// Static member definitions for TSCTimer
+std::atomic<uint64_t> TSCTimer::tsc_to_ns_multiplier_{1000000000ULL / 2400000000ULL}; // Default for 2.4GHz
+std::atomic<uint64_t> TSCTimer::tsc_to_ns_shift_{0};
+
+uint64_t TSCTimer::tsc_to_ns(uint64_t tsc) {
+    uint64_t multiplier = tsc_to_ns_multiplier_.load(std::memory_order_acquire);
+    uint64_t shift = tsc_to_ns_shift_.load(std::memory_order_acquire);
+    return (tsc * multiplier) >> shift;
+}
+
+void TSCTimer::calibrate() {
+    // This would be called by the TimestampSequencer calibration routine
+    // For now, use default values
+}
 
 } // namespace hft
