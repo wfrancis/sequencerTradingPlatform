@@ -42,38 +42,38 @@ flowchart TD
     
     MainLoop --> MarketBuffer
 
-    %% ========== SUPPORTING INFORMATION ==========
-    
-    subgraph TradingPairs [" 💎 Trading Pairs "]
-        BTC[BTC/USD<br/>~$45,000<br/>Primary Pair]
-        ETH[ETH/USD<br/>~$3,000<br/>Secondary Pair]
-    end
-    
-    subgraph Venues [" 🏛️ Exchange Venues "]
-        CBPro[Coinbase Pro<br/>Sandbox Mode<br/>REST + WebSocket]
-        Binance[Binance<br/>Testnet Mode<br/>High Frequency]
-    end
-    
-    subgraph MessageFlow [" 📨 Message Types "]
-        MsgTick[MARKET_DATA_TICK<br/>Bid/Ask/Size/Volume]
-        MsgSignal[SIGNAL<br/>Arbitrage Opportunity]
-        MsgOrder[ORDER<br/>Buy/Sell Instructions]
-        MsgFill[FILL<br/>Execution Confirmation]
-    end
-    
-    subgraph Performance [" ⚡ System Performance "]
-        PerfRing[Ring Buffer<br/>~5ns latency]
-        PerfSeq[Sequencer<br/>~2ns overhead]
-        PerfStrat[Strategy<br/>&lt;1ms decision]
-        PerfTotal[End-to-End<br/>&lt;10ms total]
-    end
-    
-    subgraph RiskControls [" 🛡️ Risk Management "]
-        RiskPos[Max Position<br/>0.01 BTC/ETH]
-        RiskOrder[Order Size<br/>0.001 maximum]
-        RiskSpread[Min Spread<br/>20 bps threshold]
-        RiskMode[Paper Mode<br/>ENABLED]
-    end
+%%    %% ========== SUPPORTING INFORMATION ==========
+%%
+%%    subgraph TradingPairs [" 💎 Trading Pairs "]
+%%        BTC[BTC/USD<br/>~$45,000<br/>Primary Pair]
+%%        ETH[ETH/USD<br/>~$3,000<br/>Secondary Pair]
+%%    end
+%%
+%%    subgraph Venues [" 🏛️ Exchange Venues "]
+%%        CBPro[Coinbase Pro<br/>Sandbox Mode<br/>REST + WebSocket]
+%%        Binance[Binance<br/>Testnet Mode<br/>High Frequency]
+%%    end
+%%
+%%    subgraph MessageFlow [" 📨 Message Types "]
+%%        MsgTick[MARKET_DATA_TICK<br/>Bid/Ask/Size/Volume]
+%%        MsgSignal[SIGNAL<br/>Arbitrage Opportunity]
+%%        MsgOrder[ORDER<br/>Buy/Sell Instructions]
+%%        MsgFill[FILL<br/>Execution Confirmation]
+%%    end
+%%
+%%    subgraph Performance [" ⚡ System Performance "]
+%%        PerfRing[Ring Buffer<br/>~5ns latency]
+%%        PerfSeq[Sequencer<br/>~2ns overhead]
+%%        PerfStrat[Strategy<br/>&lt;1ms decision]
+%%        PerfTotal[End-to-End<br/>&lt;10ms total]
+%%    end
+%%
+%%    subgraph RiskControls [" 🛡️ Risk Management "]
+%%        RiskPos[Max Position<br/>0.01 BTC/ETH]
+%%        RiskOrder[Order Size<br/>0.001 maximum]
+%%        RiskSpread[Min Spread<br/>20 bps threshold]
+%%        RiskMode[Paper Mode<br/>ENABLED]
+%%    end
 
     %% ========== STYLING FOR BETTER VISUAL HIERARCHY ==========
     
