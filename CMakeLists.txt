@@ -83,8 +83,13 @@ endif()
 add_executable(standalone_simulator standalone_simulator.cpp)
 target_link_libraries(standalone_simulator pthread)
 
+# Create high-speed HFT simulator for performance testing
+add_executable(high_speed_simulator high_speed_simulator.cpp)
+target_link_libraries(high_speed_simulator pthread)
+
 # Summary of build targets
 message(STATUS "Build targets configured:")
 message(STATUS "  hft - Original HFT trading system")
 message(STATUS "  hft_simulator - High-fidelity trading system simulator")
 message(STATUS "  standalone_simulator - Standalone demonstration of high-fidelity simulator")
+message(STATUS "  high_speed_simulator - Ultra-fast HFT speed performance demo")
