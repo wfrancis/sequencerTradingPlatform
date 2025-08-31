@@ -23,6 +23,9 @@ set(HEADER_FILES
     feed_handler.hpp
     position_tracker.hpp
     enhanced_risk_manager.hpp
+    comprehensive_risk_manager.hpp
+    system_health_monitor.hpp
+    unified_risk_controller.hpp
     logger.hpp
     connection_manager.hpp
     network_simulator.hpp
@@ -94,9 +97,27 @@ target_link_libraries(standalone_simulator pthread)
 add_executable(high_speed_simulator high_speed_simulator.cpp)
 target_link_libraries(high_speed_simulator pthread)
 
+# Create risk system demonstration
+add_executable(risk_system_demo 
+    risk_system_demo.cpp
+    ${HEADER_FILES}
+)
+target_link_libraries(risk_system_demo pthread)
+target_include_directories(risk_system_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Create integrated HFT + Risk Control demonstration
+add_executable(integrated_risk_hft_demo 
+    integrated_risk_hft_demo.cpp
+    ${HEADER_FILES}
+)
+target_link_libraries(integrated_risk_hft_demo pthread)
+target_include_directories(integrated_risk_hft_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # Summary of build targets
 message(STATUS "Build targets configured:")
 message(STATUS "  hft - Original HFT trading system")
 message(STATUS "  hft_simulator - High-fidelity trading system simulator")
 message(STATUS "  standalone_simulator - Standalone demonstration of high-fidelity simulator")
 message(STATUS "  high_speed_simulator - Ultra-fast HFT speed performance demo")
+message(STATUS "  risk_system_demo - Comprehensive risk management system demonstration")
+message(STATUS "  integrated_risk_hft_demo - Real-time HFT + Risk Control integration demo")
