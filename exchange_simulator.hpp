@@ -51,7 +51,7 @@ private:
         std::atomic<uint32_t> next_priority{0};
         SymbolId symbol_id;
         
-        OrderBook(SymbolId id) : symbol_id(id) {}
+        explicit OrderBook(SymbolId id) : symbol_id(id) {}
         
         void add_order(Order& order) {
             order.priority = next_priority.fetch_add(1);
@@ -159,6 +159,7 @@ private:
         }
     };
     
+public:
     struct Fill {
         OrderId order_id;
         std::string trader_id;
@@ -177,6 +178,8 @@ private:
             trade_id = ts; // Simple trade ID generation
         }
     };
+
+private:
     
     std::mt19937_64 rng_;
     std::unordered_map<SymbolId, OrderBook> order_books_;
@@ -216,8 +219,12 @@ public:
     explicit ExchangeSimulator(uint64_t seed = std::random_device{}()) 
         : rng_(seed) {
         // Initialize with common crypto symbols
-        order_books_.emplace(1, OrderBook(1)); // BTC
-        order_books_.emplace(2, OrderBook(2)); // ETH
+        order_books_.emplace(std::piecewise_construct, 
+                            std::forward_as_tuple(1), 
+                            std::forward_as_tuple(1)); // BTC
+        order_books_.emplace(std::piecewise_construct, 
+                            std::forward_as_tuple(2), 
+                            std::forward_as_tuple(2)); // ETH
     }
     
     void set_latency_profile(const LatencyProfile& profile) {
