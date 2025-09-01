@@ -18,10 +18,27 @@ endif()
 set(SHARED_HEADER_FILES
     shared_types.hpp
     base_market_generator.hpp
-    base_exchange_simulator.hpp
+    sim/base_exchange_simulator.hpp
 )
 
-# Header files (for IDE support)
+# Header files by category
+set(RISK_HEADER_FILES
+    risk/enhanced_risk_manager.hpp
+    risk/comprehensive_risk_manager.hpp
+    risk/unified_risk_controller.hpp
+)
+
+set(MONITOR_HEADER_FILES
+    monitor/system_health_monitor.hpp
+    monitor/real_time_monitor.hpp
+    monitor/monitoring_integration.hpp
+)
+
+set(SIM_HEADER_FILES
+    sim/network_simulator.hpp
+)
+
+# Core header files (for IDE support)
 set(HEADER_FILES
     messages.hpp
     ring_buffer.hpp 
@@ -29,25 +46,21 @@ set(HEADER_FILES
     crypto_config.hpp
     feed_handler.hpp
     position_tracker.hpp
-    enhanced_risk_manager.hpp
-    comprehensive_risk_manager.hpp
-    system_health_monitor.hpp
-    unified_risk_controller.hpp
     logger.hpp
     connection_manager.hpp
-    network_simulator.hpp
-    real_time_monitor.hpp
-    monitoring_integration.hpp
     ${SHARED_HEADER_FILES}
+    ${RISK_HEADER_FILES}
+    ${MONITOR_HEADER_FILES}
+    ${SIM_HEADER_FILES}
 )
 
 # Simulator header files
 set(SIMULATOR_HEADER_FILES
     market_data_generator.hpp
-    exchange_simulator.hpp
-    infrastructure_simulator.hpp
+    sim/exchange_simulator.hpp
+    sim/infrastructure_simulator.hpp
     scenario_engine.hpp
-    simulation_controller.hpp
+    sim/simulation_controller.hpp
 )
 
 # Create original HFT executable
@@ -58,7 +71,7 @@ add_executable(hft
 
 # Create simulator executable
 add_executable(hft_simulator 
-    simulation_runner.cpp
+    sim/simulation_runner.cpp
     ${HEADER_FILES}
     ${SIMULATOR_HEADER_FILES}
 )
@@ -68,8 +81,18 @@ target_link_libraries(hft pthread)
 target_link_libraries(hft_simulator pthread)
 
 # Include directories
-target_include_directories(hft PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(hft_simulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(hft PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
+)
+target_include_directories(hft_simulator PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
+)
 
 # Add NUMA if available
 if(NUMA_FOUND)
@@ -99,35 +122,49 @@ endif()
 
 # Create standalone simulator executable (uses shared headers)
 add_executable(standalone_simulator 
-    standalone_simulator.cpp
+    sim/standalone_simulator.cpp
     ${SHARED_HEADER_FILES}
 )
 target_link_libraries(standalone_simulator pthread)
-target_include_directories(standalone_simulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(standalone_simulator PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
+)
 
 # Create high-speed HFT simulator for performance testing (uses shared headers)
 add_executable(high_speed_simulator 
-    high_speed_simulator.cpp
+    sim/high_speed_simulator.cpp
     ${SHARED_HEADER_FILES}
 )
 target_link_libraries(high_speed_simulator pthread)
-target_include_directories(high_speed_simulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(high_speed_simulator PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
+)
 
 # Create risk system demonstration
 add_executable(risk_system_demo 
-    risk_system_demo.cpp
+    risk/risk_system_demo.cpp
     ${HEADER_FILES}
 )
 target_link_libraries(risk_system_demo pthread)
-target_include_directories(risk_system_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(risk_system_demo PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor
+)
 
 # Create integrated HFT + Risk Control demonstration
 add_executable(integrated_risk_hft_demo 
-    integrated_risk_hft_demo.cpp
+    risk/integrated_risk_hft_demo.cpp
     ${HEADER_FILES}
 )
 target_link_libraries(integrated_risk_hft_demo pthread)
-target_include_directories(integrated_risk_hft_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(integrated_risk_hft_demo PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor
+)
 
 # Summary of build targets
 message(STATUS "Build targets configured:")
