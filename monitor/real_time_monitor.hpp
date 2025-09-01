@@ -11,9 +11,9 @@
 #include <algorithm>
 #include <numeric>
 #include <functional>
-#include "messages.hpp"
-#include "sequencer.hpp"
-#include "logger.hpp"
+#include "../messages.hpp"
+#include "../sequencer.hpp"
+#include "../logger.hpp"
 #include <ctime>
 #include <iomanip>
 

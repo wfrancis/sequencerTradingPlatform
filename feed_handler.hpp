@@ -11,7 +11,7 @@
 #include "ring_buffer.hpp"
 #include "crypto_config.hpp"
 #include "position_tracker.hpp"
-#include "enhanced_risk_manager.hpp"
+#include "risk/enhanced_risk_manager.hpp"
 
 namespace hft {
 

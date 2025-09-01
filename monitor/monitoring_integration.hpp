@@ -1,11 +1,11 @@
 #pragma once
 
 #include "real_time_monitor.hpp"
-#include "messages.hpp"
-#include "sequencer.hpp"
-#include "feed_handler.hpp"
-#include "position_tracker.hpp"
-#include "enhanced_risk_manager.hpp"
+#include "../messages.hpp"
+#include "../sequencer.hpp"
+#include "../feed_handler.hpp"
+#include "../position_tracker.hpp"
+#include "../risk/enhanced_risk_manager.hpp"
 
 namespace hft::monitoring {
 

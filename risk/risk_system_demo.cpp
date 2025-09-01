@@ -3,8 +3,8 @@
 #include <thread>
 #include <memory>
 #include "unified_risk_controller.hpp"
-#include "position_tracker.hpp"
-#include "messages.hpp"
+#include "../position_tracker.hpp"
+#include "../messages.hpp"
 
 /**
  * Risk System Integration Demo

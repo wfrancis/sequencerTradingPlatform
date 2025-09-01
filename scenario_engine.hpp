@@ -9,8 +9,8 @@
 #include <random>
 #include "messages.hpp"
 #include "market_data_generator.hpp"
-#include "exchange_simulator.hpp"
-#include "infrastructure_simulator.hpp"
+#include "sim/exchange_simulator.hpp"
+#include "sim/infrastructure_simulator.hpp"
 
 namespace hft::simulator {
 

@@ -4,11 +4,11 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
-#include "messages.hpp"
-#include "market_data_generator.hpp"
+#include "../messages.hpp"
+#include "../market_data_generator.hpp"
 #include "exchange_simulator.hpp"
 #include "infrastructure_simulator.hpp"
-#include "scenario_engine.hpp"
+#include "../scenario_engine.hpp"
 
 namespace hft::simulator {
 

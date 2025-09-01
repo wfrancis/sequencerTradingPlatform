@@ -4,8 +4,8 @@
 #include <signal.h>
 #include <memory>
 #include <string>
-#include "shared_types.hpp"
-#include "base_market_generator.hpp"
+#include "../shared_types.hpp"
+#include "../base_market_generator.hpp"
 #include "base_exchange_simulator.hpp"
 
 // Simplified standalone version that demonstrates the complete high-fidelity simulator

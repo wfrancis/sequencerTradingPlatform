@@ -7,8 +7,8 @@
 #include <functional>
 #include <string>
 #include <atomic>
-#include "messages.hpp"
-#include "market_data_generator.hpp"
+#include "../messages.hpp"
+#include "../market_data_generator.hpp"
 
 namespace hft::simulator {
 

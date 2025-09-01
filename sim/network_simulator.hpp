@@ -3,8 +3,8 @@
 #include <random>
 #include <queue>
 #include <chrono>
-#include "messages.hpp"
-#include "ring_buffer.hpp"
+#include "../messages.hpp"
+#include "../ring_buffer.hpp"
 
 namespace hft {
 

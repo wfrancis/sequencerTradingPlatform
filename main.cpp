@@ -8,12 +8,12 @@
 #include "crypto_config.hpp"
 #include "feed_handler.hpp"
 #include "position_tracker.hpp"
-#include "enhanced_risk_manager.hpp"
+#include "risk/enhanced_risk_manager.hpp"
 #include "logger.hpp"
 #include "connection_manager.hpp"
-#include "network_simulator.hpp"
-#include "real_time_monitor.hpp"
-#include "monitoring_integration.hpp"
+#include "sim/network_simulator.hpp"
+#include "monitor/real_time_monitor.hpp"
+#include "monitor/monitoring_integration.hpp"
 
 using namespace hft;
 using namespace hft::monitoring;

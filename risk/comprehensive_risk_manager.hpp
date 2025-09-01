@@ -13,8 +13,8 @@
 #include <algorithm>
 #include <numeric>
 #include "enhanced_risk_manager.hpp"
-#include "position_tracker.hpp"
-#include "messages.hpp"
+#include "../position_tracker.hpp"
+#include "../messages.hpp"
 
 namespace risk {
 

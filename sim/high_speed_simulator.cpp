@@ -8,8 +8,8 @@
 #include <map>
 #include <functional>
 #include <atomic>
-#include "shared_types.hpp"
-#include "base_market_generator.hpp"
+#include "../shared_types.hpp"
+#include "../base_market_generator.hpp"
 #include "base_exchange_simulator.hpp"
 
 // High-speed HFT simulator that runs at realistic microsecond speeds

@@ -9,10 +9,10 @@
 #include <vector>
 #include <functional>
 #include "comprehensive_risk_manager.hpp"
-#include "system_health_monitor.hpp"
+#include "../monitor/system_health_monitor.hpp"
 #include "enhanced_risk_manager.hpp"
-#include "position_tracker.hpp"
-#include "messages.hpp"
+#include "../position_tracker.hpp"
+#include "../messages.hpp"
 
 namespace risk {
 
