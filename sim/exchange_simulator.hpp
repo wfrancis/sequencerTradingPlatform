@@ -63,28 +63,50 @@ private:
         }
         
         bool remove_order(OrderId id, Side side) {
-            auto& levels = (side == Side::BUY) ? bids : asks;
-            for (auto& [price, orders] : levels) {
-                auto it = std::find_if(orders.begin(), orders.end(),
-                    [id](const Order& o) { return o.id == id; });
-                if (it != orders.end()) {
-                    orders.erase(it);
-                    if (orders.empty()) {
-                        levels.erase(price);
+            if (side == Side::BUY) {
+                for (auto& [price, orders] : bids) {
+                    auto it = std::find_if(orders.begin(), orders.end(),
+                        [id](const Order& o) { return o.id == id; });
+                    if (it != orders.end()) {
+                        orders.erase(it);
+                        if (orders.empty()) {
+                            bids.erase(price);
+                        }
+                        return true;
                     }
-                    return true;
+                }
+            } else {
+                for (auto& [price, orders] : asks) {
+                    auto it = std::find_if(orders.begin(), orders.end(),
+                        [id](const Order& o) { return o.id == id; });
+                    if (it != orders.end()) {
+                        orders.erase(it);
+                        if (orders.empty()) {
+                            asks.erase(price);
+                        }
+                        return true;
+                    }
                 }
             }
             return false;
         }
         
         Order* find_order(OrderId id, Side side) {
-            auto& levels = (side == Side::BUY) ? bids : asks;
-            for (auto& [price, orders] : levels) {
-                auto it = std::find_if(orders.begin(), orders.end(),
-                    [id](const Order& o) { return o.id == id; });
-                if (it != orders.end()) {
-                    return &(*it);
+            if (side == Side::BUY) {
+                for (auto& [price, orders] : bids) {
+                    auto it = std::find_if(orders.begin(), orders.end(),
+                        [id](const Order& o) { return o.id == id; });
+                    if (it != orders.end()) {
+                        return &(*it);
+                    }
+                }
+            } else {
+                for (auto& [price, orders] : asks) {
+                    auto it = std::find_if(orders.begin(), orders.end(),
+                        [id](const Order& o) { return o.id == id; });
+                    if (it != orders.end()) {
+                        return &(*it);
+                    }
                 }
             }
             return nullptr;

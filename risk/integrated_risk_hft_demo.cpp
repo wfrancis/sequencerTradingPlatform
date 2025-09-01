@@ -10,9 +10,9 @@
 #include <atomic>
 #include <iomanip>
 
-#include "../unified_risk_controller.hpp"
-#include "../position_tracker.hpp"
-#include "../messages.hpp"
+#include "unified_risk_controller.hpp"
+#include "position_tracker.hpp"
+#include "messages.hpp"
 
 /**
  * Integrated High-Speed Trading Simulator with Comprehensive Risk Controls
