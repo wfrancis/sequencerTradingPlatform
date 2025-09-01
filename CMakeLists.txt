@@ -25,6 +25,7 @@ set(SHARED_HEADER_FILES
 set(RISK_HEADER_FILES
     risk/enhanced_risk_manager.hpp
     risk/comprehensive_risk_manager.hpp
+    risk/institutional_risk_manager.hpp
     risk/unified_risk_controller.hpp
 )
 

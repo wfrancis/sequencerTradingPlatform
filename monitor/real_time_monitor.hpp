@@ -141,7 +141,7 @@ struct ComponentHealth {
     }
     
     void heartbeat() {
-        last_heartbeat_ns.store(hft::rdtsc(), std::memory_order_relaxed);
+        last_heartbeat_ns.store(::hft::rdtsc(), std::memory_order_relaxed);
     }
     
     void increment_messages() {
@@ -153,7 +153,7 @@ struct ComponentHealth {
     }
     
     bool check_health(uint64_t timeout_ns, uint32_t max_error_rate_pct) {
-        uint64_t current_time = hft::rdtsc();
+        uint64_t current_time = ::hft::rdtsc();
         uint64_t last_hb = last_heartbeat_ns.load(std::memory_order_relaxed);
         
         // Convert TSC to nanoseconds (approximate)
@@ -238,7 +238,7 @@ private:
 
 public:
     RealTimeMonitor(const MonitoringThresholds& thresholds = MonitoringThresholds{})
-        : thresholds_(thresholds), monitoring_start_time_(hft::rdtsc()) {
+        : thresholds_(thresholds), monitoring_start_time_(::hft::rdtsc()) {
         
         // Initialize core component monitors
         register_component("sequencer");
@@ -290,7 +290,7 @@ public:
     }
     
     void record_latency(const std::string& operation_name, uint64_t start_time_ns) {
-        uint64_t end_time = hft::rdtsc();
+        uint64_t end_time = ::hft::rdtsc();
         uint64_t latency_ns = (end_time - start_time_ns) * 1000000000ULL / 2400000000ULL; // Approx conversion
         
         latency_metrics_[operation_name].add_sample(latency_ns);
@@ -304,7 +304,7 @@ public:
     }
     
     // Spread monitoring
-    void update_spread(const std::string& symbol, Venue venue, double spread_bps) {
+    void update_spread(const std::string& symbol, ::hft::Venue venue, double spread_bps) {
         std::string key = symbol + "_" + std::to_string(static_cast<int>(venue));
         spread_metrics_[key].update_spread(spread_bps);
         
@@ -372,7 +372,7 @@ public:
     }
     
     void raise_alert(AlertLevel level, const std::string& component, const std::string& message) {
-        Alert alert{level, component, message, hft::rdtsc()};
+        Alert alert{level, component, message, ::hft::rdtsc()};
         
         // Store recent alerts
         recent_alerts_.push_back(alert);
@@ -527,7 +527,7 @@ private:
             // Update dashboard
             if (dashboard_.dashboard_enabled.load()) {
                 dashboard_.update_count.fetch_add(1);
-                dashboard_.last_update_ns.store(hft::rdtsc());
+                dashboard_.last_update_ns.store(::hft::rdtsc());
                 print_dashboard();
             }
             

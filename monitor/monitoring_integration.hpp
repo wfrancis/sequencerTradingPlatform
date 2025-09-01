@@ -38,7 +38,7 @@ public:
         
     public:
         LatencyTracker(RealTimeMonitor& monitor, const std::string& operation)
-            : monitor_(monitor), operation_(operation), start_time_(hft::rdtsc()) {}
+            : monitor_(monitor), operation_(operation), start_time_(::hft::rdtsc()) {}
         
         ~LatencyTracker() {
             monitor_.record_latency(operation_, start_time_);
@@ -46,14 +46,14 @@ public:
     };
     
     // Market data processing instrumentation
-    void instrument_market_data_processing(const SequencedMessage& msg) {
+    void instrument_market_data_processing(const ::hft::SequencedMessage& msg) {
         monitor_.component_heartbeat("feed_handler");
         monitor_.component_message_processed("feed_handler");
         
         // Calculate and track spread if it's market data
-        if (msg.type == MessageType::MARKET_DATA_TICK) {
-            double bid = to_float_price(msg.market_data.bid_price);
-            double ask = to_float_price(msg.market_data.ask_price);
+        if (msg.type == ::hft::MessageType::MARKET_DATA_TICK) {
+            double bid = ::hft::to_float_price(msg.market_data.bid_price);
+            double ask = ::hft::to_float_price(msg.market_data.ask_price);
             
             if (bid > 0 && ask > 0 && ask > bid) {
                 double mid = (bid + ask) / 2.0;
@@ -98,7 +98,7 @@ public:
     }
     
     // Connection health instrumentation
-    void instrument_connection_event(Venue venue, const std::string& event_type, bool success) {
+    void instrument_connection_event(::hft::Venue venue, const std::string& event_type, bool success) {
         monitor_.component_heartbeat("connection_manager");
         
         if (success) {
@@ -127,10 +127,10 @@ public:
     }
 
 private:
-    std::string venue_name(Venue venue) const {
+    std::string venue_name(::hft::Venue venue) const {
         switch (venue) {
-            case Venue::COINBASE: return "Coinbase";
-            case Venue::BINANCE: return "Binance";
+            case ::hft::Venue::COINBASE: return "Coinbase";
+            case ::hft::Venue::BINANCE: return "Binance";
             default: return "Unknown";
         }
     }
@@ -145,11 +145,11 @@ thread_local std::unordered_map<std::string, MonitoringIntegration::TimingContex
  */
 class MonitoredFeedHandler {
 private:
-    MockFeedHandler& base_handler_;
+    ::hft::MockFeedHandler& base_handler_;
     MonitoringIntegration& monitor_integration_;
     
 public:
-    MonitoredFeedHandler(MockFeedHandler& handler, MonitoringIntegration& monitor)
+    MonitoredFeedHandler(::hft::MockFeedHandler& handler, MonitoringIntegration& monitor)
         : base_handler_(handler), monitor_integration_(monitor) {}
     
     void start() {
@@ -161,7 +161,7 @@ public:
     }
     
     // Override market data processing to add monitoring
-    void process_market_data_with_monitoring(const SequencedMessage& msg) {
+    void process_market_data_with_monitoring(const ::hft::SequencedMessage& msg) {
         auto latency_tracker = monitor_integration_.track_latency("market_data_processing");
         monitor_integration_.instrument_market_data_processing(msg);
         
@@ -178,7 +178,7 @@ public:
  */
 class MonitoredArbitrageStrategy {
 private:
-    ArbitrageStrategy& base_strategy_;
+    ::hft::ArbitrageStrategy& base_strategy_;
     MonitoringIntegration& monitor_integration_;
     RealTimeMonitor& monitor_;
     
@@ -187,7 +187,7 @@ private:
     uint64_t signal_count_ = 0;
     
 public:
-    MonitoredArbitrageStrategy(ArbitrageStrategy& strategy, 
+    MonitoredArbitrageStrategy(::hft::ArbitrageStrategy& strategy, 
                               MonitoringIntegration& monitor_integration,
                               RealTimeMonitor& monitor)
         : base_strategy_(strategy), monitor_integration_(monitor_integration), monitor_(monitor) {}
@@ -211,7 +211,7 @@ public:
     
     void record_arbitrage_signal(double expected_edge_bps, double actual_pnl = 0.0) {
         signal_count_++;
-        uint64_t current_time = hft::rdtsc();
+        uint64_t current_time = ::hft::rdtsc();
         
         // Calculate signal frequency
         if (last_signal_time_ > 0) {

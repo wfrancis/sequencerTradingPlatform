@@ -286,6 +286,12 @@ public:
         return max_drawdown_;
     }
     
+    // Get all positions across all exchanges and symbols
+    std::unordered_map<std::string, std::unordered_map<std::string, Position>> get_all_positions() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return positions_;
+    }
+    
     bool can_trade(const std::string& exchange, const std::string& symbol, 
                    double quantity, double price) const {
         std::lock_guard<std::mutex> lock(mutex_);

@@ -9,6 +9,7 @@
 #include "feed_handler.hpp"
 #include "position_tracker.hpp"
 #include "risk/enhanced_risk_manager.hpp"
+#include "risk/institutional_risk_manager.hpp"
 #include "logger.hpp"
 #include "connection_manager.hpp"
 #include "sim/network_simulator.hpp"
@@ -42,22 +43,22 @@ int main() {
         LOG_INFO("HFT System starting");
         
         // Calibrate TSC
-        hft::TSCTimer::calibrate();
+        ::hft::TSCTimer::calibrate();
         LOG_INFO("TSC calibration completed");
         
         // Initialize configuration
-        CryptoConfig config;
+        ::hft::CryptoConfig config;
         std::cout << "⚙️  Configuration loaded:\n";
         std::cout << "   - Paper trading: " << (config.strategy.paper_trading ? "ON" : "OFF") << "\n";
         std::cout << "   - Arbitrage threshold: " << (config.strategy.arbitrage_threshold * 10000) << " bps\n";
         std::cout << "   - Max position size: " << config.risk.max_position_size << "\n\n";
         
         // Create ring buffers for message passing
-        SPSCRingBuffer<1024> market_data_buffer;
-        SPSCRingBuffer<1024> signal_buffer;
+        ::hft::SPSCRingBuffer<1024> market_data_buffer;
+        ::hft::SPSCRingBuffer<1024> signal_buffer;
         
         // Create sequencer for message ordering
-        SPSCSequencer sequencer;
+        ::hft::SPSCSequencer sequencer;
         
         // Initialize connection manager
         hft::ConnectionManager conn_manager;
@@ -65,8 +66,8 @@ int main() {
         LOG_INFO("Connection manager started");
         
         // Connect to exchanges
-        conn_manager.connect(hft::Venue::COINBASE);
-        conn_manager.connect(hft::Venue::BINANCE);
+        conn_manager.connect(::hft::Venue::COINBASE);
+        conn_manager.connect(::hft::Venue::BINANCE);
         LOG_INFO("Connected to exchanges");
         
         // Initialize network simulator for testing
@@ -91,6 +92,19 @@ int main() {
         PositionTracker position_tracker;
         EnhancedRiskManager risk_manager(&position_tracker);
         
+        // Initialize institutional-grade risk management
+        risk::InstitutionalRiskLimits institutional_limits;
+        institutional_limits.max_portfolio_var_pct = 2.0;       // 2% daily VaR
+        institutional_limits.max_portfolio_volatility = 0.15;   // 15% annualized
+        institutional_limits.max_expected_shortfall_pct = 3.0;  // 3% ES
+        institutional_limits.max_single_position_pct = 20.0;    // 20% max position
+        institutional_limits.max_exchange_concentration = 0.60; // 60% max on single exchange
+        institutional_limits.max_tail_risk_pct = 5.0;           // 5% tail risk
+        institutional_limits.max_intraday_drawdown_pct = 3.0;   // 3% intraday DD
+        institutional_limits.max_consecutive_losses = 5;        // 5 consecutive losses
+        
+        risk::InstitutionalRiskManager institutional_risk(&position_tracker, institutional_limits);
+        
         // Initialize session manager with laptop-optimized settings
         SessionConfig session_config;
         session_config.max_session_hours = 4.0;        // 4-hour sessions
@@ -109,6 +123,7 @@ int main() {
         MonitoredRiskManager monitored_risk_manager(risk_manager, monitor_integration);
         
         std::cout << "🛡️ Enhanced risk management initialized\n";
+        std::cout << "🏛️ Institutional-grade risk controls active\n";
         std::cout << "📊 Position tracking enabled\n";
         std::cout << "🎯 Session management configured\n";
         std::cout << "💾 Trade logging: trade_log.csv\n";
@@ -116,11 +131,11 @@ int main() {
         std::cout << "📝 Session logs: session_logs.csv\n\n";
         
         // Initialize market data feed handler (simulated)
-        MockFeedHandler feed_handler(market_data_buffer, sequencer);
+        ::hft::MockFeedHandler feed_handler(market_data_buffer, sequencer);
         MonitoredFeedHandler monitored_feed_handler(feed_handler, monitor_integration);
         
         // Initialize enhanced arbitrage strategy
-        ArbitrageStrategy strategy(market_data_buffer, signal_buffer, config, 
+        ::hft::ArbitrageStrategy strategy(market_data_buffer, signal_buffer, config, 
                                  &position_tracker, &risk_manager);
         MonitoredArbitrageStrategy monitored_strategy(strategy, monitor_integration, monitor);
         
@@ -157,9 +172,9 @@ int main() {
             }
             
             // Process any generated signals with monitoring
-            SequencedMessage signal;
+            ::hft::SequencedMessage signal;
             while (signal_buffer.read(signal)) {
-                if (signal.type == MessageType::SIGNAL) {
+                if (signal.type == ::hft::MessageType::SIGNAL) {
                     // Record arbitrage signal metrics
                     monitored_strategy.record_arbitrage_signal(signal.signal.expected_edge);
                     
@@ -169,13 +184,27 @@ int main() {
                               << "strength: " << signal.signal.strength << "\n";
                     
                     if (config.strategy.paper_trading) {
-                        std::cout << "   📝 Paper trade executed (simulated)\n";
-                        // Simulate realistic P&L for monitoring and session tracking
-                        double simulated_pnl = (signal.signal.expected_edge / 10000.0) * 1000.0; // $1000 notional
-                        double estimated_fees = 2.0; // $2 fee estimate
+                        // Check institutional risk controls before executing
+                        bool can_trade = institutional_risk.can_execute_trade(
+                            "BINANCE", "BTC/USD", 0.01, 50000.0, signal.signal.expected_edge
+                        );
                         
-                        monitor.record_trade(simulated_pnl, estimated_fees);
-                        session_manager.record_trade(simulated_pnl, estimated_fees);
+                        if (can_trade) {
+                            std::cout << "   📝 Paper trade executed (simulated) - Institutional risk: ✅\n";
+                            // Simulate realistic P&L for monitoring and session tracking
+                            double simulated_pnl = (signal.signal.expected_edge / 10000.0) * 1000.0; // $1000 notional
+                            double estimated_fees = 2.0; // $2 fee estimate
+                            
+                            monitor.record_trade(simulated_pnl, estimated_fees);
+                            session_manager.record_trade(simulated_pnl, estimated_fees);
+                            
+                            // Update institutional risk manager with trade data
+                            // institutional_risk.update_trade_execution("BTC/USD", 0.01, 50000.0, simulated_pnl); // Method will be implemented later
+                        } else {
+                            std::cout << "   ❌ Trade blocked by institutional risk controls\n";
+                            auto risk_status = institutional_risk.get_current_risk_level();
+                            std::cout << "   🚨 Risk level: " << static_cast<int>(risk_status) << "\n";
+                        }
                     }
                 }
                 

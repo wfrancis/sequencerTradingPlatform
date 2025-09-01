@@ -33,7 +33,7 @@ private:
         uint32_t reconnect_delay_ms = 1000;
     };
     
-    std::unordered_map<Venue, ExchangeConnection> connections_;
+    std::unordered_map<::hft::Venue, ExchangeConnection> connections_;
     std::thread monitor_thread_;
     std::atomic<bool> running_{false};
 
@@ -50,7 +50,7 @@ public:
         }
     }
     
-    bool connect(Venue venue) {
+    bool connect(::hft::Venue venue) {
         auto& conn = connections_[venue];
         conn.state = ConnectionState::CONNECTING;
         
@@ -59,14 +59,14 @@ public:
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
         conn.state = ConnectionState::CONNECTED;
-        conn.last_heartbeat = get_timestamp_ns();
+        conn.last_heartbeat = ::hft::get_timestamp_ns();
         conn.reconnect_attempts = 0;
         
         printf("🔗 Connected to %s\n", venue_name(venue).c_str());
         return true;
     }
     
-    void reconnect(Venue venue) {
+    void reconnect(::hft::Venue venue) {
         auto& conn = connections_[venue];
         
         if (conn.reconnect_attempts >= conn.max_reconnect_attempts) {
@@ -88,7 +88,7 @@ public:
         }
     }
     
-    bool is_connected(Venue venue) const {
+    bool is_connected(::hft::Venue venue) const {
         auto it = connections_.find(venue);
         if (it != connections_.end()) {
             return it->second.state.load() == ConnectionState::CONNECTED;
@@ -96,14 +96,14 @@ public:
         return false;
     }
     
-    void update_heartbeat(Venue venue) {
+    void update_heartbeat(::hft::Venue venue) {
         auto it = connections_.find(venue);
         if (it != connections_.end()) {
-            it->second.last_heartbeat = get_timestamp_ns();
+            it->second.last_heartbeat = ::hft::get_timestamp_ns();
         }
     }
     
-    void increment_message_count(Venue venue, bool sent) {
+    void increment_message_count(::hft::Venue venue, bool sent) {
         auto it = connections_.find(venue);
         if (it != connections_.end()) {
             if (sent) {
@@ -122,7 +122,7 @@ public:
         uint64_t messages_received;
     };
     
-    ConnectionStats get_stats(Venue venue) const {
+    ConnectionStats get_stats(::hft::Venue venue) const {
         auto it = connections_.find(venue);
         if (it != connections_.end()) {
             const auto& conn = it->second;
@@ -141,11 +141,11 @@ public:
         printf("\n🌐 === CONNECTION MANAGER STATUS ===\n");
         for (const auto& [venue, conn] : connections_) {
             const char* state_str = connection_state_string(conn.state.load());
-            printf("  %s: %s (Msgs: %lu/%lu, Reconnects: %u)\n",
+            printf("  %s: %s (Msgs: %llu/%llu, Reconnects: %u)\n",
                    venue_name(venue).c_str(),
                    state_str,
-                   conn.messages_sent.load(),
-                   conn.messages_received.load(),
+                   static_cast<unsigned long long>(conn.messages_sent.load()),
+                   static_cast<unsigned long long>(conn.messages_received.load()),
                    conn.reconnect_attempts.load());
         }
         printf("==================================\n\n");
@@ -154,7 +154,7 @@ public:
 private:
     void monitor_connections() {
         while (running_) {
-            uint64_t current_time = get_timestamp_ns();
+            uint64_t current_time = ::hft::get_timestamp_ns();
             
             for (auto& [venue, conn] : connections_) {
                 if (conn.state == ConnectionState::CONNECTED) {
@@ -172,18 +172,18 @@ private:
         }
     }
     
-    std::string venue_name(Venue venue) const {
+    std::string venue_name(::hft::Venue venue) const {
         switch (venue) {
-            case Venue::BINANCE: return "Binance";
-            case Venue::COINBASE: return "Coinbase";
-            case Venue::CME: return "CME";
-            case Venue::NYSE: return "NYSE";
-            case Venue::NASDAQ: return "NASDAQ";
-            case Venue::EUREX: return "Eurex";
-            case Venue::DERIBIT: return "Deribit";
-            case Venue::OKX: return "OKX";
-            case Venue::BATS: return "BATS";
-            case Venue::ICE: return "ICE";
+            case ::hft::Venue::BINANCE: return "Binance";
+            case ::hft::Venue::COINBASE: return "Coinbase";
+            case ::hft::Venue::CME: return "CME";
+            case ::hft::Venue::NYSE: return "NYSE";
+            case ::hft::Venue::NASDAQ: return "NASDAQ";
+            case ::hft::Venue::EUREX: return "Eurex";
+            case ::hft::Venue::DERIBIT: return "Deribit";
+            case ::hft::Venue::OKX: return "OKX";
+            case ::hft::Venue::BATS: return "BATS";
+            case ::hft::Venue::ICE: return "ICE";
             default: return "Unknown";
         }
     }

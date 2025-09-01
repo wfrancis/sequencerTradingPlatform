@@ -11,7 +11,7 @@ namespace hft {
 class NetworkSimulator {
 private:
     struct DelayedMessage {
-        SequencedMessage msg;
+        ::hft::SequencedMessage msg;
         uint64_t delivery_time_ns;
         
         bool operator>(const DelayedMessage& other) const {
@@ -39,7 +39,7 @@ public:
           latency_jitter_us_(jitter_us),
           packet_loss_rate_(loss_rate) {}
     
-    bool simulate_send(const SequencedMessage& msg, SPSCRingBuffer<1024>& output_buffer) {
+    bool simulate_send(const ::hft::SequencedMessage& msg, ::hft::SPSCRingBuffer<1024>& output_buffer) {
         // Simulate packet loss
         if (packet_loss_dist_(rng_) < packet_loss_rate_) {
             return false; // Message lost
@@ -47,7 +47,7 @@ public:
         
         // Calculate delivery time with jitter
         double latency_us = std::max(0.0, latency_dist_(rng_));
-        uint64_t current_time = get_timestamp_ns();
+        uint64_t current_time = ::hft::get_timestamp_ns();
         uint64_t delivery_time = current_time + static_cast<uint64_t>(latency_us * 1000);
         
         // Simulate reordering
@@ -62,8 +62,8 @@ public:
         return true;
     }
     
-    void process_delayed_messages(SPSCRingBuffer<1024>& output_buffer) {
-        uint64_t current_time = get_timestamp_ns();
+    void process_delayed_messages(::hft::SPSCRingBuffer<1024>& output_buffer) {
+        uint64_t current_time = ::hft::get_timestamp_ns();
         
         while (!delayed_queue_.empty() && 
                delayed_queue_.top().delivery_time_ns <= current_time) {
