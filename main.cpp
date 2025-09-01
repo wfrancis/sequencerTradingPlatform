@@ -14,6 +14,7 @@
 #include "sim/network_simulator.hpp"
 #include "monitor/real_time_monitor.hpp"
 #include "monitor/monitoring_integration.hpp"
+#include "session_manager.hpp"
 
 using namespace hft;
 using namespace hft::monitoring;
@@ -90,14 +91,29 @@ int main() {
         PositionTracker position_tracker;
         EnhancedRiskManager risk_manager(&position_tracker);
         
+        // Initialize session manager with laptop-optimized settings
+        SessionConfig session_config;
+        session_config.max_session_hours = 4.0;        // 4-hour sessions
+        session_config.daily_loss_limit = 500.0;       // Stop at -$500
+        session_config.daily_profit_target = 1000.0;   // Optional stop at +$1000
+        session_config.enable_profit_target = false;   // Disabled by default
+        session_config.battery_pause_threshold = 20.0; // Pause at 20% battery
+        session_config.enable_battery_monitoring = true;
+        session_config.enable_emergency_stops = true;
+        session_config.max_drawdown_percent = 5.0;     // 5% max drawdown
+        
+        SessionManager session_manager(&position_tracker, session_config);
+        
         // Create monitored wrappers
         MonitoredPositionTracker monitored_position_tracker(position_tracker, monitor_integration);
         MonitoredRiskManager monitored_risk_manager(risk_manager, monitor_integration);
         
         std::cout << "🛡️ Enhanced risk management initialized\n";
         std::cout << "📊 Position tracking enabled\n";
+        std::cout << "🎯 Session management configured\n";
         std::cout << "💾 Trade logging: trade_log.csv\n";
-        std::cout << "📋 Risk events: risk_events.csv\n\n";
+        std::cout << "📋 Risk events: risk_events.csv\n";
+        std::cout << "📝 Session logs: session_logs.csv\n\n";
         
         // Initialize market data feed handler (simulated)
         MockFeedHandler feed_handler(market_data_buffer, sequencer);
@@ -112,6 +128,12 @@ int main() {
         feed_handler.start();
         monitor.start_monitoring();
         
+        // Start trading session
+        if (!session_manager.start_session()) {
+            std::cout << "❌ Failed to start trading session\n";
+            return 1;
+        }
+        
         // Main trading loop
         auto start_time = std::chrono::steady_clock::now();
         auto last_status_print = start_time;
@@ -119,9 +141,9 @@ int main() {
         std::cout << "✅ Trading loop started\n";
         std::cout << "📊 Real-time monitoring active\n";
         std::cout << "🎯 Latency target: <50ms\n";
-        std::cout << "🛑 Emergency stop: Ctrl+C or automatic triggers\n\n";
+        std::cout << "🛑 Emergency stop: Ctrl+C, session limits, or automatic triggers\n\n";
         
-        while (running.load()) {
+        while (running.load() && session_manager.should_continue_session()) {
             // Check for emergency stop conditions
             if (monitor.is_emergency_stop()) {
                 std::cout << "🛑 EMERGENCY STOP TRIGGERED: " << monitor.get_emergency_reason() << "\n";
@@ -148,9 +170,12 @@ int main() {
                     
                     if (config.strategy.paper_trading) {
                         std::cout << "   📝 Paper trade executed (simulated)\n";
-                        // Simulate realistic P&L for monitoring
+                        // Simulate realistic P&L for monitoring and session tracking
                         double simulated_pnl = (signal.signal.expected_edge / 10000.0) * 1000.0; // $1000 notional
-                        monitor.record_trade(simulated_pnl, 2.0); // $2 fee estimate
+                        double estimated_fees = 2.0; // $2 fee estimate
+                        
+                        monitor.record_trade(simulated_pnl, estimated_fees);
+                        session_manager.record_trade(simulated_pnl, estimated_fees);
                     }
                 }
                 
@@ -170,6 +195,7 @@ int main() {
                 monitored_position_tracker.print_status();
                 monitored_risk_manager.print_risk_status();
                 conn_manager.print_status();
+                session_manager.print_session_status(); // Add session status
                 last_status_print = now;
                 
                 // Print performance stats
@@ -200,6 +226,16 @@ int main() {
         
         // Cleanup
         std::cout << "\n🛑 Shutting down systems...\n";
+        
+        // End session if still active
+        if (session_manager.is_session_active()) {
+            if (session_manager.is_emergency_stop()) {
+                session_manager.end_session("Emergency stop triggered");
+            } else {
+                session_manager.end_session("User requested shutdown");
+            }
+        }
+        
         monitor.trigger_emergency_stop("Graceful shutdown requested");
         monitor.stop_monitoring();
         feed_handler.stop();

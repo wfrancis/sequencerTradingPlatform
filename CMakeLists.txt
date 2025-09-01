@@ -28,6 +28,10 @@ set(RISK_HEADER_FILES
     risk/unified_risk_controller.hpp
 )
 
+set(SESSION_HEADER_FILES
+    session_manager.hpp
+)
+
 set(MONITOR_HEADER_FILES
     monitor/system_health_monitor.hpp
     monitor/real_time_monitor.hpp
@@ -51,6 +55,7 @@ set(HEADER_FILES
     ${SHARED_HEADER_FILES}
     ${RISK_HEADER_FILES}
     ${MONITOR_HEADER_FILES}
+    ${SESSION_HEADER_FILES}
     ${SIM_HEADER_FILES}
 )
 
