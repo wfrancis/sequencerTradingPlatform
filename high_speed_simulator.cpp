@@ -8,156 +8,32 @@
 #include <map>
 #include <functional>
 #include <atomic>
+#include "shared_types.hpp"
+#include "base_market_generator.hpp"
+#include "base_exchange_simulator.hpp"
 
 // High-speed HFT simulator that runs at realistic microsecond speeds
 namespace hft {
 
-// Basic type definitions
-using Price = uint64_t;
-using Quantity = uint64_t;
-using OrderId = uint64_t;
-using SymbolId = uint16_t;
+// Using types from shared_types.hpp (no namespace needed)
 
-constexpr uint64_t PRICE_MULTIPLIER = 100000000ULL;
-constexpr uint64_t QUANTITY_MULTIPLIER = 100000000ULL;
+// Use shared high-speed market data generator
+using HighSpeedMarketDataGenerator = HighSpeedMarketGenerator;
 
-inline Price to_fixed_price(double price) {
-    return static_cast<Price>(price * PRICE_MULTIPLIER);
-}
-
-inline double to_float_price(Price price) {
-    return static_cast<double>(price) / PRICE_MULTIPLIER;
-}
-
-inline uint64_t get_timestamp_ns() {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()
-    ).count();
-}
-
-enum class Venue : uint8_t { COINBASE = 0, BINANCE = 1 };
-enum class Side : uint8_t { BUY = 0, SELL = 1 };
-
-// High-Performance Market Data Generator
-class HighSpeedMarketDataGenerator {
-private:
-    std::mt19937_64 rng_;
-    std::map<SymbolId, double> prices_;
-    std::map<SymbolId, double> volatilities_;
-    std::atomic<uint64_t> ticks_generated_{0};
-    
+// Adapter for ultra-fast order submission
+class HighSpeedExchangeAdapter : public HighSpeedExchangeSimulator {
 public:
-    HighSpeedMarketDataGenerator() : rng_(std::random_device{}()) {
-        prices_[1] = 50000.0;  // BTC
-        prices_[2] = 3000.0;   // ETH
-        volatilities_[1] = 0.0001;  // Much smaller moves per tick
-        volatilities_[2] = 0.0002;
-    }
-    
-    void generate_tick() {
-        ticks_generated_.fetch_add(1);
-        
-        for (auto& [symbol, price] : prices_) {
-            // Micro price movements typical in HFT
-            std::normal_distribution<double> micro_change(0.0, volatilities_[symbol] * price);
-            double change = micro_change(rng_);
-            price += change;
-            price = std::max(price, 100.0);
-        }
-    }
-    
-    void inject_volatility_spike() {
-        for (auto& [symbol, vol] : volatilities_) {
-            vol *= 50.0; // Massive volatility spike
-        }
-    }
-    
-    void inject_flash_crash() {
-        for (auto& [symbol, price] : prices_) {
-            price *= 0.95; // 5% instant drop
-        }
-    }
-    
-    void reset_volatility() {
-        volatilities_[1] = 0.0001;
-        volatilities_[2] = 0.0002;
-    }
-    
-    double get_price(SymbolId symbol) const {
-        auto it = prices_.find(symbol);
-        return it != prices_.end() ? it->second : 0.0;
-    }
-    
-    uint64_t get_ticks_generated() const { return ticks_generated_.load(); }
-    void reset_stats() { ticks_generated_.store(0); }
-};
-
-// Ultra-Low-Latency Exchange Simulator
-class HighSpeedExchangeSimulator {
-private:
-    std::atomic<uint64_t> orders_processed_{0};
-    std::atomic<uint64_t> fills_executed_{0};
-    std::atomic<OrderId> next_order_id_{1};
-    std::mt19937_64 rng_;
-    
-public:
-    HighSpeedExchangeSimulator() : rng_(std::random_device{}()) {}
-    
     OrderId submit_order_ultra_fast(Side side, Price price, Quantity quantity) {
-        OrderId id = next_order_id_.fetch_add(1);
-        orders_processed_.fetch_add(1);
-        
-        // Simulate ultra-low latency (1-10 microseconds)
-        // No sleep - real HFT systems process in nanoseconds!
-        
-        // High fill rate for demo
-        if (std::uniform_real_distribution<>(0, 1)(rng_) > 0.1) { // 90% fill rate
-            fills_executed_.fetch_add(1);
-        }
-        
-        return id;
-    }
-    
-    uint64_t get_orders_processed() const { return orders_processed_.load(); }
-    uint64_t get_fills_executed() const { return fills_executed_.load(); }
-    void reset_stats() { 
-        orders_processed_.store(0); 
-        fills_executed_.store(0);
+        return submit_order(side, price, quantity, "hft_trader");
     }
 };
 
-// High-Performance Infrastructure Simulator
-class HighSpeedInfrastructureSimulator {
-private:
-    std::atomic<uint64_t> messages_sent_{0};
-    std::atomic<uint64_t> messages_lost_{0};
-    double packet_loss_rate_ = 0.00001; // Very low under normal conditions
-    
+// Adapter for fast message sending
+class HighSpeedInfrastructureAdapter : public HighSpeedInfrastructureSimulator {
 public:
     bool send_message_fast() {
-        messages_sent_.fetch_add(1);
-        
-        // Ultra-fast message processing - no artificial delays
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        if (std::uniform_real_distribution<>(0, 1)(gen) < packet_loss_rate_) {
-            messages_lost_.fetch_add(1);
-            return false;
-        }
-        return true;
-    }
-    
-    void simulate_network_stress() {
-        packet_loss_rate_ = 0.001;  // 0.1% loss during stress
-    }
-    
-    void restore_network() { packet_loss_rate_ = 0.00001; }
-    
-    uint64_t get_messages_sent() const { return messages_sent_.load(); }
-    uint64_t get_messages_lost() const { return messages_lost_.load(); }
-    void reset_stats() { 
-        messages_sent_.store(0);
-        messages_lost_.store(0);
+        send_message("HFT_MESSAGE");
+        return get_messages_lost() == 0 || (get_messages_sent() > get_messages_lost());
     }
 };
 
@@ -165,15 +41,15 @@ public:
 class HighSpeedSimulationController {
 private:
     std::unique_ptr<HighSpeedMarketDataGenerator> market_gen_;
-    std::unique_ptr<HighSpeedExchangeSimulator> exchange_;
-    std::unique_ptr<HighSpeedInfrastructureSimulator> infra_;
+    std::unique_ptr<HighSpeedExchangeAdapter> exchange_;
+    std::unique_ptr<HighSpeedInfrastructureAdapter> infra_;
     std::atomic<bool> running_{false};
     
 public:
     HighSpeedSimulationController() {
         market_gen_ = std::make_unique<HighSpeedMarketDataGenerator>();
-        exchange_ = std::make_unique<HighSpeedExchangeSimulator>();
-        infra_ = std::make_unique<HighSpeedInfrastructureSimulator>();
+        exchange_ = std::make_unique<HighSpeedExchangeAdapter>();
+        infra_ = std::make_unique<HighSpeedInfrastructureAdapter>();
     }
     
     void run_hft_speed_demo(int duration_seconds = 5) {
@@ -195,16 +71,16 @@ public:
             
             // Process market data at HFT speed
             for (int i = 0; i < 1000; ++i) { // 1000 ticks per iteration
-                market_gen_->generate_tick();
+                market_gen_->generate_market_update();
                 tick_count++;
                 
                 // Submit orders based on market data
                 if (tick_count % 10 == 0) { // Every 10th tick
-                    double btc_price = market_gen_->get_price(1);
+                    double btc_price = market_gen_->get_price(BTC_USD);
                     exchange_->submit_order_ultra_fast(
                         Side::BUY, 
                         to_fixed_price(btc_price * 0.9999), 
-                        static_cast<Quantity>(0.001 * QUANTITY_MULTIPLIER)
+                        to_fixed_quantity(0.001)
                     );
                     infra_->send_message_fast();
                     order_count++;
@@ -213,9 +89,9 @@ public:
             
             // Inject some market events
             if (elapsed.count() == 2) {
-                market_gen_->inject_volatility_spike();
+                market_gen_->trigger_volatility_spike();
             } else if (elapsed.count() == 4) {
-                market_gen_->inject_flash_crash();
+                market_gen_->trigger_flash_crash();
             }
             
             // Tiny sleep to prevent 100% CPU usage while maintaining high speed
@@ -227,7 +103,7 @@ public:
             end_time - start_time).count();
         
         // Performance metrics
-        uint64_t ticks_generated = market_gen_->get_ticks_generated();
+        uint64_t ticks_generated = market_gen_->get_updates_generated();
         uint64_t orders_processed = exchange_->get_orders_processed();
         uint64_t fills_executed = exchange_->get_fills_executed();
         uint64_t messages_sent = infra_->get_messages_sent();
@@ -274,9 +150,9 @@ public:
         auto demo_start = std::chrono::high_resolution_clock::now();
         
         for (int i = 0; i < 10; ++i) {
-            market_gen_->generate_tick();
+            market_gen_->generate_market_update();
             exchange_->submit_order_ultra_fast(Side::BUY, to_fixed_price(50000), 
-                                             static_cast<Quantity>(0.1 * QUANTITY_MULTIPLIER));
+                                             to_fixed_quantity(0.1));
             infra_->send_message_fast();
             std::this_thread::sleep_for(std::chrono::seconds(1)); // Demo speed
         }
@@ -296,10 +172,10 @@ public:
         auto hft_start = std::chrono::high_resolution_clock::now();
         
         for (int i = 0; i < 100000; ++i) { // 100,000 events
-            market_gen_->generate_tick();
+            market_gen_->generate_market_update();
             if (i % 10 == 0) {
                 exchange_->submit_order_ultra_fast(Side::BUY, to_fixed_price(50000), 
-                                                 static_cast<Quantity>(0.001 * QUANTITY_MULTIPLIER));
+                                                 to_fixed_quantity(0.001));
                 infra_->send_message_fast();
             }
         }

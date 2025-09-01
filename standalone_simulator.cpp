@@ -3,200 +3,62 @@
 #include <thread>
 #include <signal.h>
 #include <memory>
-#include <random>
-#include <vector>
-#include <map>
-#include <functional>
+#include <string>
+#include "shared_types.hpp"
+#include "base_market_generator.hpp"
+#include "base_exchange_simulator.hpp"
 
 // Simplified standalone version that demonstrates the complete high-fidelity simulator
-namespace hft {
+using namespace hft;
 
-// Basic type definitions
-using Price = uint64_t;
-using Quantity = uint64_t;
-using OrderId = uint64_t;
-using SymbolId = uint16_t;
-
-constexpr uint64_t PRICE_MULTIPLIER = 100000000ULL;
-constexpr uint64_t QUANTITY_MULTIPLIER = 100000000ULL;
-
-inline Price to_fixed_price(double price) {
-    return static_cast<Price>(price * PRICE_MULTIPLIER);
-}
-
-inline double to_float_price(Price price) {
-    return static_cast<double>(price) / PRICE_MULTIPLIER;
-}
-
-inline uint64_t get_timestamp_ns() {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now().time_since_epoch()
-    ).count();
-}
-
-enum class Venue : uint8_t {
-    COINBASE = 0,
-    BINANCE = 1
-};
-
-enum class Side : uint8_t {
-    BUY = 0,
-    SELL = 1
-};
-
-// Simplified Market Data Generator
-class SimpleMarketDataGenerator {
-private:
-    std::mt19937_64 rng_;
-    std::map<SymbolId, double> prices_;
-    std::map<SymbolId, double> volatilities_;
-    
+// Enhanced Market Data Generator using shared base
+class StandaloneMarketDataGenerator : public SimpleMarketGenerator {
 public:
-    SimpleMarketDataGenerator() : rng_(std::random_device{}()) {
-        prices_[1] = 50000.0;  // BTC
-        prices_[2] = 3000.0;   // ETH
-        volatilities_[1] = 0.02;  // 2% volatility
-        volatilities_[2] = 0.03;  // 3% volatility
+    StandaloneMarketDataGenerator() : SimpleMarketGenerator() {
+        // Initialize with standalone-specific prices
+        prices_[BTC_USD] = 50000.0;  // BTC
+        prices_[ETH_USD] = 3000.0;   // ETH
     }
     
     void simulate_normal_market() {
-        for (auto& [symbol, price] : prices_) {
-            std::normal_distribution<double> price_change(0.0, volatilities_[symbol] * price * 0.01);
-            price += price_change(rng_);
-            price = std::max(price, 100.0); // Minimum price
-        }
+        generate_market_update();
     }
     
     void simulate_flash_crash() {
         printf("💥 Injecting flash crash - prices dropping 15%%\n");
-        for (auto& [symbol, price] : prices_) {
-            price *= 0.85; // 15% drop
-        }
+        trigger_flash_crash();
     }
     
     void simulate_high_volatility() {
         printf("⚡ High volatility mode activated\n");
-        for (auto& [symbol, vol] : volatilities_) {
-            vol *= 3.0; // Triple volatility
-        }
+        trigger_volatility_spike();
     }
     
     void simulate_news_shock() {
         printf("📰 News shock - random 5-10%% price movement\n");
-        for (auto& [symbol, price] : prices_) {
-            double shock = (0.05 + 0.05 * std::uniform_real_distribution<>(0, 1)(rng_));
-            if (std::uniform_real_distribution<>(0, 1)(rng_) > 0.5) shock = -shock;
-            price *= (1.0 + shock);
-        }
-    }
-    
-    double get_price(SymbolId symbol) const {
-        auto it = prices_.find(symbol);
-        return it != prices_.end() ? it->second : 0.0;
+        SimpleMarketGenerator::simulate_news_shock();
     }
     
     void reset_volatility() {
-        volatilities_[1] = 0.02;
-        volatilities_[2] = 0.03;
+        restore_normal_market();
     }
 };
 
-// Simplified Exchange Simulator
-class SimpleExchangeSimulator {
-private:
-    std::atomic<uint64_t> total_trades_{0};
-    std::atomic<OrderId> next_order_id_{1};
-    std::mt19937_64 rng_;
-    
-public:
-    SimpleExchangeSimulator() : rng_(std::random_device{}()) {}
-    
-    OrderId submit_order(Side side, Price price, Quantity quantity, const std::string& trader) {
-        OrderId id = next_order_id_.fetch_add(1);
-        
-        // Simulate processing latency
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-        
-        printf("   📋 Order ACK: ID=%llu, Side=%s, Price=$%.2f, Qty=%.3f\n", 
-               static_cast<unsigned long long>(id), 
-               side == Side::BUY ? "BUY" : "SELL",
-               to_float_price(price), to_float_price(quantity));
-        
-        // Simulate fill probability
-        if (std::uniform_real_distribution<>(0, 1)(rng_) > 0.3) { // 70% fill rate
-            printf("   💰 FILL: ID=%llu, Price=$%.2f, Qty=%.3f\n",
-                   static_cast<unsigned long long>(id),
-                   to_float_price(price), to_float_price(quantity));
-            total_trades_.fetch_add(1);
-        }
-        
-        return id;
-    }
-    
-    uint64_t get_total_trades() const { return total_trades_.load(); }
-    
-    void reset_stats() { total_trades_.store(0); }
-};
+// Now using shared SimpleExchangeSimulator from base_exchange_simulator.hpp
 
-// Simplified Infrastructure Simulator
-class SimpleInfrastructureSimulator {
-private:
-    std::atomic<uint64_t> messages_sent_{0};
-    std::atomic<uint64_t> messages_lost_{0};
-    double packet_loss_rate_ = 0.0001;
-    double latency_multiplier_ = 1.0;
-    
-public:
-    bool send_message(const std::string& message) {
-        messages_sent_.fetch_add(1);
-        
-        // Simulate packet loss
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        if (std::uniform_real_distribution<>(0, 1)(gen) < packet_loss_rate_) {
-            messages_lost_.fetch_add(1);
-            return false;
-        }
-        
-        // Simulate latency
-        auto latency_us = static_cast<int>(100 * latency_multiplier_);
-        std::this_thread::sleep_for(std::chrono::microseconds(latency_us));
-        
-        return true;
-    }
-    
-    void simulate_network_issues() {
-        printf("🌐 Network issues injected - increased latency and packet loss\n");
-        packet_loss_rate_ = 0.01;  // 1% packet loss
-        latency_multiplier_ = 5.0;  // 5x latency
-    }
-    
-    void simulate_exchange_outage() {
-        printf("🔌 Exchange outage - all messages will be lost\n");
-        packet_loss_rate_ = 1.0;  // 100% packet loss
-    }
-    
-    void restore_network() {
-        packet_loss_rate_ = 0.0001;
-        latency_multiplier_ = 1.0;
-    }
-    
-    double get_packet_loss_rate() const { return packet_loss_rate_; }
-    uint64_t get_messages_sent() const { return messages_sent_.load(); }
-    uint64_t get_messages_lost() const { return messages_lost_.load(); }
-};
+// Now using shared SimpleInfrastructureSimulator from base_exchange_simulator.hpp
 
-// Complete Simulation Controller
+// Complete Simulation Controller using shared components
 class StandaloneSimulationController {
 private:
-    std::unique_ptr<SimpleMarketDataGenerator> market_data_gen_;
+    std::unique_ptr<StandaloneMarketDataGenerator> market_data_gen_;
     std::unique_ptr<SimpleExchangeSimulator> exchange_sim_;
     std::unique_ptr<SimpleInfrastructureSimulator> infra_sim_;
     std::atomic<bool> running_{false};
     
 public:
     StandaloneSimulationController() {
-        market_data_gen_ = std::make_unique<SimpleMarketDataGenerator>();
+        market_data_gen_ = std::make_unique<StandaloneMarketDataGenerator>();
         exchange_sim_ = std::make_unique<SimpleExchangeSimulator>();
         infra_sim_ = std::make_unique<SimpleInfrastructureSimulator>();
     }
@@ -208,8 +70,8 @@ public:
         running_.store(true);
         auto start_time = std::chrono::steady_clock::now();
         
-        double btc_start = market_data_gen_->get_price(1);
-        double eth_start = market_data_gen_->get_price(2);
+        double btc_start = market_data_gen_->get_price(BTC_USD);
+        double eth_start = market_data_gen_->get_price(ETH_USD);
         
         while (running_.load()) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
@@ -222,17 +84,17 @@ public:
             
             // Simulate some trading
             if (elapsed.count() % 5 == 0) {  // Every 5 seconds
-                double btc_price = market_data_gen_->get_price(1);
+                double btc_price = market_data_gen_->get_price(BTC_USD);
                 exchange_sim_->submit_order(Side::BUY, to_fixed_price(btc_price * 0.999), 
-                                          static_cast<Quantity>(0.1 * QUANTITY_MULTIPLIER), "trader1");
+                                          to_fixed_quantity(0.1), "trader1");
                 infra_sim_->send_message("ORDER_BTC_BUY");
             }
             
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
         
-        double btc_end = market_data_gen_->get_price(1);
-        double eth_end = market_data_gen_->get_price(2);
+        double btc_end = market_data_gen_->get_price(BTC_USD);
+        double eth_end = market_data_gen_->get_price(ETH_USD);
         
         printf("\n📊 Normal Trading Results:\n");
         printf("   BTC: $%.2f → $%.2f (%.2f%%)\n", btc_start, btc_end, 
@@ -251,8 +113,8 @@ public:
         running_.store(true);
         auto start_time = std::chrono::steady_clock::now();
         
-        double btc_start = market_data_gen_->get_price(1);
-        double eth_start = market_data_gen_->get_price(2);
+        double btc_start = market_data_gen_->get_price(BTC_USD);
+        double eth_start = market_data_gen_->get_price(ETH_USD);
         
         bool crash_triggered = false;
         
@@ -278,17 +140,17 @@ public:
             
             // Simulate panicked trading during crash
             if (crash_triggered && elapsed.count() < 30) {
-                double btc_price = market_data_gen_->get_price(1);
+                double btc_price = market_data_gen_->get_price(BTC_USD);
                 exchange_sim_->submit_order(Side::SELL, to_fixed_price(btc_price * 0.99), 
-                                          static_cast<Quantity>(0.5 * QUANTITY_MULTIPLIER), "panic_seller");
+                                          to_fixed_quantity(0.5), "panic_seller");
                 infra_sim_->send_message("PANIC_SELL_ORDER");
             }
             
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
         
-        double btc_end = market_data_gen_->get_price(1);
-        double eth_end = market_data_gen_->get_price(2);
+        double btc_end = market_data_gen_->get_price(BTC_USD);
+        double eth_end = market_data_gen_->get_price(ETH_USD);
         
         printf("\n📊 Flash Crash Results:\n");
         printf("   BTC: $%.2f → $%.2f (%.2f%%)\n", btc_start, btc_end, 
@@ -307,8 +169,8 @@ public:
         running_.store(true);
         auto start_time = std::chrono::steady_clock::now();
         
-        double btc_start = market_data_gen_->get_price(1);
-        double eth_start = market_data_gen_->get_price(2);
+        double btc_start = market_data_gen_->get_price(BTC_USD);
+        double eth_start = market_data_gen_->get_price(ETH_USD);
         
         while (running_.load()) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
@@ -333,16 +195,16 @@ public:
             market_data_gen_->simulate_normal_market();
             
             // Continuous trading activity
-            double btc_price = market_data_gen_->get_price(1);
+            double btc_price = market_data_gen_->get_price(BTC_USD);
             exchange_sim_->submit_order(Side::BUY, to_fixed_price(btc_price * 0.999), 
-                                      static_cast<Quantity>(0.2 * QUANTITY_MULTIPLIER), "stress_trader");
+                                      to_fixed_quantity(0.2), "stress_trader");
             infra_sim_->send_message("STRESS_TEST_ORDER");
             
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         }
         
-        double btc_end = market_data_gen_->get_price(1);
-        double eth_end = market_data_gen_->get_price(2);
+        double btc_end = market_data_gen_->get_price(BTC_USD);
+        double eth_end = market_data_gen_->get_price(ETH_USD);
         
         printf("\n📊 Stress Test Results:\n");
         printf("   BTC: $%.2f → $%.2f (%.2f%%)\n", btc_start, btc_end, 
@@ -369,10 +231,8 @@ public:
     }
 };
 
-} // namespace hft
-
 // Global simulation controller
-std::unique_ptr<hft::StandaloneSimulationController> g_controller;
+std::unique_ptr<StandaloneSimulationController> g_controller;
 std::atomic<bool> g_running{true};
 
 void signal_handler(int signum) {
@@ -441,7 +301,7 @@ int main(int argc, char* argv[]) {
     
     try {
         // Initialize simulation controller
-        g_controller = std::make_unique<hft::StandaloneSimulationController>();
+        g_controller = std::make_unique<StandaloneSimulationController>();
         
         std::cout << "✅ High-fidelity simulator initialized successfully!\n";
         

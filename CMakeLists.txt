@@ -14,6 +14,13 @@ if(PkgConfig_FOUND)
     pkg_check_modules(NUMA numa)
 endif()
 
+# Shared header files (used across multiple executables)
+set(SHARED_HEADER_FILES
+    shared_types.hpp
+    base_market_generator.hpp
+    base_exchange_simulator.hpp
+)
+
 # Header files (for IDE support)
 set(HEADER_FILES
     messages.hpp
@@ -31,6 +38,7 @@ set(HEADER_FILES
     network_simulator.hpp
     real_time_monitor.hpp
     monitoring_integration.hpp
+    ${SHARED_HEADER_FILES}
 )
 
 # Simulator header files
@@ -89,13 +97,21 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang
     )
 endif()
 
-# Create standalone simulator executable (no dependencies on problematic files)
-add_executable(standalone_simulator standalone_simulator.cpp)
+# Create standalone simulator executable (uses shared headers)
+add_executable(standalone_simulator 
+    standalone_simulator.cpp
+    ${SHARED_HEADER_FILES}
+)
 target_link_libraries(standalone_simulator pthread)
+target_include_directories(standalone_simulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Create high-speed HFT simulator for performance testing
-add_executable(high_speed_simulator high_speed_simulator.cpp)
+# Create high-speed HFT simulator for performance testing (uses shared headers)
+add_executable(high_speed_simulator 
+    high_speed_simulator.cpp
+    ${SHARED_HEADER_FILES}
+)
 target_link_libraries(high_speed_simulator pthread)
+target_include_directories(high_speed_simulator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Create risk system demonstration
 add_executable(risk_system_demo 
