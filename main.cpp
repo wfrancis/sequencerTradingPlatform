@@ -6,19 +6,17 @@
 #include "ring_buffer.hpp"
 #include "sequencer.hpp"
 #include "crypto_config.hpp"
-#include "feed_handler.hpp"
 #include "position_tracker.hpp"
-#include "risk/enhanced_risk_manager.hpp"
-#include "risk/institutional_risk_manager.hpp"
 #include "logger.hpp"
 #include "connection_manager.hpp"
-#include "sim/network_simulator.hpp"
-#include "monitor/real_time_monitor.hpp"
-#include "monitor/monitoring_integration.hpp"
-#include "session_manager.hpp"
+#include "strategies/intraday_strategies.hpp"
+#include "strategies/intraday_risk_manager.hpp"
+#include "strategies/enhanced_feed_handler.hpp"
+#include "strategies/simple_executor.hpp"
+#include "strategies/performance_tracker.hpp"
 
 using namespace hft;
-using namespace hft::monitoring;
+using namespace hft::strategies;
 
 // Global flag for graceful shutdown
 std::atomic<bool> running{true};
@@ -29,8 +27,9 @@ void signal_handler(int signum) {
 }
 
 int main() {
-    std::cout << "🚀 HFT Crypto Arbitrage MVP Starting...\n";
-    std::cout << "📊 Monitoring BTC/ETH on Coinbase & Binance\n";
+    std::cout << "🚀 Intraday Trading System Starting...\n";
+    std::cout << "📊 Trading SPY, QQQ, AAPL on NYSE\n";
+    std::cout << "🎯 Strategies: VWAP Reversion, Opening Drive, Pair Divergence\n";
     std::cout << "💡 Press Ctrl+C to stop\n\n";
     
     // Set up signal handling for graceful shutdown
@@ -40,260 +39,189 @@ int main() {
     try {
         // Initialize logging
         hft::Logger::instance().init();
-        LOG_INFO("HFT System starting");
-        
-        // Calibrate TSC
-        ::hft::TSCTimer::calibrate();
-        LOG_INFO("TSC calibration completed");
-        
-        // Initialize configuration
-        ::hft::CryptoConfig config;
-        std::cout << "⚙️  Configuration loaded:\n";
-        std::cout << "   - Paper trading: " << (config.strategy.paper_trading ? "ON" : "OFF") << "\n";
-        std::cout << "   - Arbitrage threshold: " << (config.strategy.arbitrage_threshold * 10000) << " bps\n";
-        std::cout << "   - Max position size: " << config.risk.max_position_size << "\n\n";
-        
-        // Create ring buffers for message passing
-        ::hft::SPSCRingBuffer<1024> market_data_buffer;
-        ::hft::SPSCRingBuffer<1024> signal_buffer;
-        
-        // Create sequencer for message ordering
-        ::hft::SPSCSequencer sequencer;
-        
-        // Initialize connection manager
-        hft::ConnectionManager conn_manager;
-        conn_manager.start();
-        LOG_INFO("Connection manager started");
-        
-        // Connect to exchanges
-        conn_manager.connect(::hft::Venue::COINBASE);
-        conn_manager.connect(::hft::Venue::BINANCE);
-        LOG_INFO("Connected to exchanges");
-        
-        // Initialize network simulator for testing
-        hft::NetworkSimulator network_sim(100.0, 20.0, 0.001);
-        LOG_INFO("Network simulator initialized (100us latency, 20us jitter, 0.1% loss)");
-        
-        // Initialize monitoring system
-        MonitoringThresholds thresholds;
-        thresholds.max_latency_ns = 50000000ULL;  // 50ms target
-        thresholds.max_spread_bps = 500.0;        // 50bps alert threshold
-        thresholds.min_profit_threshold = -500.0; // $500 max loss before emergency stop
-        
-        RealTimeMonitor monitor(thresholds);
-        MonitoringIntegration monitor_integration(monitor);
-        
-        // Set up alert callback
-        monitor.set_alert_callback([](const Alert& alert) {
-            std::cout << "🚨 " << alert.to_string() << "\n";
-        });
+        LOG_INFO("Intraday Trading System starting");
         
         // Initialize position tracker and risk manager
         PositionTracker position_tracker;
-        EnhancedRiskManager risk_manager(&position_tracker);
+        IntradayRiskManager risk_manager(&position_tracker);
         
-        // Initialize institutional-grade risk management
-        risk::InstitutionalRiskLimits institutional_limits;
-        institutional_limits.max_portfolio_var_pct = 2.0;       // 2% daily VaR
-        institutional_limits.max_portfolio_volatility = 0.15;   // 15% annualized
-        institutional_limits.max_expected_shortfall_pct = 3.0;  // 3% ES
-        institutional_limits.max_single_position_pct = 20.0;    // 20% max position
-        institutional_limits.max_exchange_concentration = 0.60; // 60% max on single exchange
-        institutional_limits.max_tail_risk_pct = 5.0;           // 5% tail risk
-        institutional_limits.max_intraday_drawdown_pct = 3.0;   // 3% intraday DD
-        institutional_limits.max_consecutive_losses = 5;        // 5 consecutive losses
+        std::cout << "⚙️  Intraday Configuration:\n";
+        std::cout << "   - Starting Capital: $" << risk_manager.get_limits().capital << "\n";
+        std::cout << "   - Daily Loss Limit: $" << risk_manager.get_limits().daily_loss_limit << "\n";
+        std::cout << "   - Max Trades/Day: " << risk_manager.get_limits().max_trades_per_day << "\n";
+        std::cout << "   - Symbols: SPY, QQQ, AAPL\n\n";
         
-        risk::InstitutionalRiskManager institutional_risk(&position_tracker, institutional_limits);
+        // Initialize core components
+        IntradayStrategyEngine strategy_engine;
+        SimpleExecutor executor;
+        PerformanceTracker tracker(risk_manager.get_limits().capital);
+        EnhancedMarketDataFeed feed_handler;
         
-        // Initialize session manager with laptop-optimized settings
-        SessionConfig session_config;
-        session_config.max_session_hours = 4.0;        // 4-hour sessions
-        session_config.daily_loss_limit = 500.0;       // Stop at -$500
-        session_config.daily_profit_target = 1000.0;   // Optional stop at +$1000
-        session_config.enable_profit_target = false;   // Disabled by default
-        session_config.battery_pause_threshold = 20.0; // Pause at 20% battery
-        session_config.enable_battery_monitoring = true;
-        session_config.enable_emergency_stops = true;
-        session_config.max_drawdown_percent = 5.0;     // 5% max drawdown
+        LOG_INFO("Core components initialized");
         
-        SessionManager session_manager(&position_tracker, session_config);
+        // Set up market data callback
+        std::vector<Signal> pending_signals;
+        feed_handler.set_data_callback([&](const EnhancedMarketData& data) {
+            // Process market data through strategy engine
+            auto signal = strategy_engine.process_market_data(data);
+            if (signal.is_valid && signal.confidence > 0.7) {
+                pending_signals.push_back(signal);
+            }
+            
+            // Update executor with current market data
+            executor.update_market_data(data.symbol, data.bid, data.ask);
+        });
         
-        // Create monitored wrappers
-        MonitoredPositionTracker monitored_position_tracker(position_tracker, monitor_integration);
-        MonitoredRiskManager monitored_risk_manager(risk_manager, monitor_integration);
-        
-        std::cout << "🛡️ Enhanced risk management initialized\n";
-        std::cout << "🏛️ Institutional-grade risk controls active\n";
+        std::cout << "🛡️ Intraday risk management initialized\n";
         std::cout << "📊 Position tracking enabled\n";
-        std::cout << "🎯 Session management configured\n";
-        std::cout << "💾 Trade logging: trade_log.csv\n";
-        std::cout << "📋 Risk events: risk_events.csv\n";
-        std::cout << "📝 Session logs: session_logs.csv\n\n";
+        std::cout << "📈 Performance tracking enabled\n";
+        std::cout << "💾 Trade logging: trades.csv\n";
+        std::cout << "📋 Risk events: intraday_risk.csv\n";
+        std::cout << "📝 Daily performance: daily_performance.csv\n\n";
         
-        // Initialize market data feed handler (simulated)
-        ::hft::MockFeedHandler feed_handler(market_data_buffer, sequencer);
-        MonitoredFeedHandler monitored_feed_handler(feed_handler, monitor_integration);
-        
-        // Initialize enhanced arbitrage strategy
-        ::hft::ArbitrageStrategy strategy(market_data_buffer, signal_buffer, config, 
-                                 &position_tracker, &risk_manager);
-        MonitoredArbitrageStrategy monitored_strategy(strategy, monitor_integration, monitor);
-        
-        // Start market data feed and monitoring
+        // Start market data feed
         feed_handler.start();
-        monitor.start_monitoring();
         
-        // Start trading session
-        if (!session_manager.start_session()) {
-            std::cout << "❌ Failed to start trading session\n";
-            return 1;
-        }
+        std::cout << "✅ Market data feed started\n";
+        std::cout << "✅ Strategy engine ready\n";
+        std::cout << "✅ Risk management active\n";
         
-        // Main trading loop
+        // Main intraday trading loop
         auto start_time = std::chrono::steady_clock::now();
         auto last_status_print = start_time;
+        auto last_report_time = start_time;
         
-        std::cout << "✅ Trading loop started\n";
-        std::cout << "📊 Real-time monitoring active\n";
-        std::cout << "🎯 Latency target: <50ms\n";
-        std::cout << "🛑 Emergency stop: Ctrl+C, session limits, or automatic triggers\n\n";
+        std::cout << "✅ Intraday trading loop started\n";
+        std::cout << "🎯 Target: $60 daily profit, $100 max loss\n";
+        std::cout << "⏰ Session timeout: 6 hours\n";
+        std::cout << "🛑 Emergency stop: Ctrl+C or risk limits\n\n";
         
-        while (running.load() && session_manager.should_continue_session()) {
-            // Check for emergency stop conditions
-            if (monitor.is_emergency_stop()) {
-                std::cout << "🛑 EMERGENCY STOP TRIGGERED: " << monitor.get_emergency_reason() << "\n";
-                break;
-            }
-            
-            // Process market data and look for arbitrage opportunities with monitoring
-            {
-                auto latency_tracker = monitor_integration.track_latency("main_loop_iteration");
-                monitored_strategy.process_market_data();
-            }
-            
-            // Process any generated signals with monitoring
-            ::hft::SequencedMessage signal;
-            while (signal_buffer.read(signal)) {
-                if (signal.type == ::hft::MessageType::SIGNAL) {
-                    // Record arbitrage signal metrics
-                    monitored_strategy.record_arbitrage_signal(signal.signal.expected_edge);
+        while (running.load() && risk_manager.can_trade()) {
+            // Process any pending signals from market data callback
+            for (auto it = pending_signals.begin(); it != pending_signals.end();) {
+                const auto& signal = *it;
+                
+                // Risk check before execution
+                if (risk_manager.can_trade(signal)) {
+                    // Calculate position size
+                    auto position_size = risk_manager.calculate_position_size(signal);
                     
-                    std::cout << "🎯 Arbitrage Signal: " 
-                              << std::fixed << std::setprecision(1)
-                              << signal.signal.expected_edge << " bps edge, "
-                              << "strength: " << signal.signal.strength << "\n";
-                    
-                    if (config.strategy.paper_trading) {
-                        // Check institutional risk controls before executing
-                        bool can_trade = institutional_risk.can_execute_trade(
-                            "BINANCE", "BTC/USD", 0.01, 50000.0, signal.signal.expected_edge
-                        );
+                    if (position_size.is_valid) {
+                        std::cout << "🎯 " << signal.strategy_type << " Signal: " 
+                                  << signal.symbol << " " 
+                                  << (signal.direction == Signal::LONG ? "LONG" : "SHORT")
+                                  << " @ $" << std::fixed << std::setprecision(2) << signal.entry_price
+                                  << " (confidence: " << signal.confidence << ")\n";
                         
-                        if (can_trade) {
-                            std::cout << "   📝 Paper trade executed (simulated) - Institutional risk: ✅\n";
-                            // Simulate realistic P&L for monitoring and session tracking
-                            double simulated_pnl = (signal.signal.expected_edge / 10000.0) * 1000.0; // $1000 notional
-                            double estimated_fees = 2.0; // $2 fee estimate
+                        // Execute entry order
+                        auto entry_order = executor.execute_signal(signal, position_size.shares);
+                        
+                        if (entry_order.is_filled()) {
+                            std::cout << "   ✅ Entry filled: " << entry_order.filled_quantity 
+                                      << " shares @ $" << entry_order.fill_price 
+                                      << " (slippage: " << entry_order.slippage_bps << " bps)\n";
                             
-                            monitor.record_trade(simulated_pnl, estimated_fees);
-                            session_manager.record_trade(simulated_pnl, estimated_fees);
+                            // Simulate holding period (in real system, this would be handled differently)
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
                             
-                            // Update institutional risk manager with trade data
-                            // institutional_risk.update_trade_execution("BTC/USD", 0.01, 50000.0, simulated_pnl); // Method will be implemented later
+                            // Create exit signal (simplified - would use exit conditions)
+                            Signal exit_signal = signal;
+                            exit_signal.direction = (signal.direction == Signal::LONG) ? Signal::SHORT : Signal::LONG;
+                            exit_signal.entry_price = signal.target_price;
+                            
+                            // Execute exit order
+                            auto exit_order = executor.execute_signal(exit_signal, position_size.shares);
+                            
+                            if (exit_order.is_filled()) {
+                                std::cout << "   ✅ Exit filled: " << exit_order.filled_quantity 
+                                          << " shares @ $" << exit_order.fill_price << "\n";
+                                
+                                // Calculate P&L and update tracking
+                                double pnl = executor.calculate_pnl(entry_order, exit_order);
+                                std::cout << "   💰 Trade P&L: $" << pnl << "\n";
+                                
+                                // Record trade
+                                risk_manager.update_trade_result(signal, position_size, pnl, 
+                                                                entry_order.commission + exit_order.commission);
+                                tracker.record_trade(signal, entry_order, exit_order);
+                                
+                                // Update position tracker
+                                position_tracker.add_trade("NYSE", signal.symbol, 
+                                                          entry_order.filled_quantity * 
+                                                          (signal.direction == Signal::LONG ? 1 : -1), 
+                                                          entry_order.fill_price);
+                                position_tracker.add_trade("NYSE", signal.symbol, 
+                                                          exit_order.filled_quantity * 
+                                                          (exit_signal.direction == Signal::LONG ? 1 : -1), 
+                                                          exit_order.fill_price);
+                            }
                         } else {
-                            std::cout << "   ❌ Trade blocked by institutional risk controls\n";
-                            auto risk_status = institutional_risk.get_current_risk_level();
-                            std::cout << "   🚨 Risk level: " << static_cast<int>(risk_status) << "\n";
+                            std::cout << "   ❌ Entry order rejected: " << entry_order.rejection_reason << "\n";
                         }
+                    } else {
+                        std::cout << "   ❌ Position sizing failed: " << position_size.reason << "\n";
                     }
+                } else {
+                    std::cout << "   ❌ Trade blocked by risk manager\n";
                 }
                 
-                // Update monitoring with message processing
-                monitor.component_message_processed("signal_processing");
+                it = pending_signals.erase(it);
             }
             
-            // Update component heartbeats
-            monitor.component_heartbeat("main_loop");
-            
-            // Print status every 10 seconds (monitoring dashboard updates every 1s)
+            // Print status every 30 seconds
             auto now = std::chrono::steady_clock::now();
-            if (now - last_status_print >= std::chrono::seconds(10)) {
-                // Print traditional status (monitoring dashboard shows real-time metrics)
-                std::cout << "\n📊 TRADITIONAL STATUS UPDATE:\n";
-                monitored_strategy.print_status();
-                monitored_position_tracker.print_status();
-                monitored_risk_manager.print_risk_status();
-                conn_manager.print_status();
-                session_manager.print_session_status(); // Add session status
-                last_status_print = now;
+            if (now - last_status_print >= std::chrono::seconds(30)) {
+                std::cout << "\n📊 === INTRADAY STATUS UPDATE ===\n";
                 
                 // Print performance stats
                 auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time);
-                std::cout << "   ⏱️  Runtime: " << elapsed.count() << "s\n";
-                std::cout << "   📊 Market data available: " << market_data_buffer.available() << "\n";
-                std::cout << "   📈 Signals generated: " << signal_buffer.available() << "\n";
+                std::cout << "⏱️  Runtime: " << elapsed.count() << "s\n";
+                std::cout << "💰 Current P&L: $" << risk_manager.get_daily_pnl() << "\n";
+                std::cout << "📊 Trades Today: " << risk_manager.get_trades_today() << "/" 
+                         << risk_manager.get_limits().max_trades_per_day << "\n";
+                std::cout << "💼 Current Capital: $" << tracker.get_current_capital() << "\n";
                 
-                // Show key monitoring metrics
-                const auto* latency_metrics = monitor.get_latency_metrics("main_loop_iteration");
-                if (latency_metrics && latency_metrics->sample_count > 0) {
-                    std::cout << "   ⚡ Main loop latency: " << (latency_metrics->avg_ns / 1000000.0) 
-                              << "ms avg, " << (latency_metrics->p95_ns / 1000000.0) << "ms p95\n";
-                }
+                // Show feed status
+                feed_handler.print_status();
+                executor.print_status();
+                risk_manager.print_risk_status();
                 
-                const auto& pnl_metrics = monitor.get_profitability_metrics();
-                std::cout << "   💰 P&L: $" << pnl_metrics.net_profit 
-                          << " (" << (pnl_metrics.get_win_rate() * 100) << "% win rate)\n\n";
+                last_status_print = now;
                 
-                LOG_INFO("Status update - Runtime: {}s, Market data: {}, Signals: {}, P&L: ${:.2f}", 
-                        elapsed.count(), market_data_buffer.available(), 
-                        signal_buffer.available(), pnl_metrics.net_profit);
+                LOG_INFO("Status update - Runtime: {}s, P&L: ${:.2f}, Trades: {}", 
+                        elapsed.count(), risk_manager.get_daily_pnl(), risk_manager.get_trades_today());
             }
             
-            // Small sleep to prevent excessive CPU usage on laptop
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        
-        // Cleanup
-        std::cout << "\n🛑 Shutting down systems...\n";
-        
-        // End session if still active
-        if (session_manager.is_session_active()) {
-            if (session_manager.is_emergency_stop()) {
-                session_manager.end_session("Emergency stop triggered");
-            } else {
-                session_manager.end_session("User requested shutdown");
+            // Generate daily report every hour
+            if (now - last_report_time >= std::chrono::seconds(3600)) {
+                tracker.generate_daily_report();
+                last_report_time = now;
             }
+            
+            // Sleep for 1 second (intraday trading doesn't need HFT speed)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         
-        monitor.trigger_emergency_stop("Graceful shutdown requested");
-        monitor.stop_monitoring();
+        // Cleanup and final reporting
+        std::cout << "\n🛑 Shutting down intraday trading system...\n";
+        
         feed_handler.stop();
-        conn_manager.stop();
         
         auto total_runtime = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - start_time);
         
-        LOG_INFO("HFT system shutdown complete - Runtime: {}s", total_runtime.count());
+        LOG_INFO("Intraday trading system shutdown complete - Runtime: {}s", total_runtime.count());
         
-        // Final monitoring report
-        const auto& final_pnl = monitor.get_profitability_metrics();
-        auto recent_alerts = monitor.get_recent_alerts(5);
+        // Generate final performance report
+        tracker.generate_daily_report();
         
-        std::cout << "\n✅ HFT MVP stopped gracefully\n";
+        std::cout << "\n✅ Intraday Trading System stopped gracefully\n";
         std::cout << "📊 Total runtime: " << total_runtime.count() << " seconds\n";
-        std::cout << "💰 Final P&L: $" << final_pnl.net_profit 
-                  << " (" << final_pnl.total_trades << " trades, " 
-                  << (final_pnl.get_win_rate() * 100) << "% win rate)\n";
-        std::cout << "📈 Max drawdown: $" << final_pnl.max_drawdown << "\n";
-        
-        if (!recent_alerts.empty()) {
-            std::cout << "🚨 Final alerts (" << recent_alerts.size() << "):" << "\n";
-            for (const auto& alert : recent_alerts) {
-                std::cout << "   " << alert.to_string() << "\n";
-            }
-        }
-        
-        std::cout << "🎯 Thank you for testing the HFT monitoring system!\n";
+        std::cout << "💰 Final P&L: $" << risk_manager.get_daily_pnl() << "\n";
+        std::cout << "📊 Total trades: " << risk_manager.get_trades_today() << "\n";
+        std::cout << "💼 Final capital: $" << tracker.get_current_capital() << "\n";
+        std::cout << "📈 Total return: " << tracker.get_total_return_percent() << "%\n";
+        std::cout << "🎯 Thank you for testing the intraday trading system!\n";
         
         // Shutdown logger last
         hft::Logger::instance().shutdown();

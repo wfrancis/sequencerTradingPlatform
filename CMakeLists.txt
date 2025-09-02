@@ -29,6 +29,15 @@ set(RISK_HEADER_FILES
     risk/unified_risk_controller.hpp
 )
 
+set(STRATEGY_HEADER_FILES
+    strategies/intraday_strategies.hpp
+    strategies/intraday_risk_manager.hpp
+    strategies/enhanced_feed_handler.hpp
+    strategies/simple_executor.hpp
+    strategies/performance_tracker.hpp
+    strategies/technical_indicators.hpp
+)
+
 set(SESSION_HEADER_FILES
     session_manager.hpp
 )
@@ -55,6 +64,7 @@ set(HEADER_FILES
     connection_manager.hpp
     ${SHARED_HEADER_FILES}
     ${RISK_HEADER_FILES}
+    ${STRATEGY_HEADER_FILES}
     ${MONITOR_HEADER_FILES}
     ${SESSION_HEADER_FILES}
     ${SIM_HEADER_FILES}
@@ -90,12 +100,14 @@ target_link_libraries(hft_simulator pthread)
 target_include_directories(hft PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/strategies
     ${CMAKE_CURRENT_SOURCE_DIR}/monitor
     ${CMAKE_CURRENT_SOURCE_DIR}/sim
 )
 target_include_directories(hft_simulator PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/strategies
     ${CMAKE_CURRENT_SOURCE_DIR}/monitor
     ${CMAKE_CURRENT_SOURCE_DIR}/sim
 )
@@ -172,11 +184,41 @@ target_include_directories(integrated_risk_hft_demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/monitor
 )
 
+# Create intraday trading system executable (new primary target)
+add_executable(intraday_trader 
+    main.cpp
+    ${HEADER_FILES}
+)
+target_link_libraries(intraday_trader pthread)
+target_include_directories(intraday_trader PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/strategies
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
+)
+
+# Create strategy test executable
+add_executable(test_strategies 
+    test_strategies.cpp
+    ${HEADER_FILES}
+)
+target_link_libraries(test_strategies pthread)
+target_include_directories(test_strategies PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/risk
+    ${CMAKE_CURRENT_SOURCE_DIR}/strategies
+    ${CMAKE_CURRENT_SOURCE_DIR}/monitor
+    ${CMAKE_CURRENT_SOURCE_DIR}/sim
+)
+
 # Summary of build targets
 message(STATUS "Build targets configured:")
-message(STATUS "  hft - Original HFT trading system")
+message(STATUS "  hft - Original HFT trading system (legacy)")
+message(STATUS "  intraday_trader - NEW: Intraday trading system with VWAP/momentum strategies")
 message(STATUS "  hft_simulator - High-fidelity trading system simulator")
 message(STATUS "  standalone_simulator - Standalone demonstration of high-fidelity simulator")
 message(STATUS "  high_speed_simulator - Ultra-fast HFT speed performance demo")
 message(STATUS "  risk_system_demo - Comprehensive risk management system demonstration")
 message(STATUS "  integrated_risk_hft_demo - Real-time HFT + Risk Control integration demo")
+message(STATUS "  test_strategies - Strategy validation and unit tests")

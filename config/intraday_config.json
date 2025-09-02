@@ -1,0 +1,118 @@
+{
+  "trading": {
+    "symbols": ["SPY", "QQQ", "AAPL"],
+    "primary_venue": "NYSE",
+    "max_positions": 1,
+    "position_sizing": "fixed_fractional",
+    "strategies": {
+      "opening_drive": {
+        "enabled": true,
+        "time_window": "09:30-10:30",
+        "min_gap_percent": 0.5,
+        "max_gap_percent": 3.0,
+        "volume_threshold_ratio": 1.5,
+        "stop_loss_percent": 0.8,
+        "target_profit_percent": 1.5,
+        "max_spread_bps": 25.0,
+        "risk_per_trade": 40
+      },
+      "vwap_reversion": {
+        "enabled": true,
+        "time_window": "10:30-15:00",
+        "min_distance_from_vwap": 1.0,
+        "rsi_oversold_threshold": 30.0,
+        "rsi_overbought_threshold": 70.0,
+        "min_volume_ratio": 1.0,
+        "max_spread_bps": 20.0,
+        "stop_loss_percent": 0.5,
+        "target_profit_percent": 0.8,
+        "risk_per_trade": 30
+      },
+      "pair_divergence": {
+        "enabled": true,
+        "pairs": ["SPY/QQQ"],
+        "min_zscore": 2.0,
+        "correlation_threshold": 0.8,
+        "stop_loss_percent": 0.6,
+        "target_profit_percent": 1.2,
+        "max_spread_bps": 30.0,
+        "risk_per_trade": 50
+      }
+    }
+  },
+  "risk": {
+    "capital": 5000.0,
+    "max_position_value": 1000.0,
+    "max_loss_per_trade": 40.0,
+    "daily_loss_limit": 100.0,
+    "daily_profit_target": 60.0,
+    "max_trades_per_day": 4,
+    "max_consecutive_losses": 2,
+    "max_single_position_percent": 20.0,
+    "min_seconds_between_trades": 300,
+    "session_timeout_hours": 6
+  },
+  "execution": {
+    "order_type": "market",
+    "slippage_model": {
+      "base_slippage_bps": 2.0,
+      "opening_hour_multiplier": 2.5,
+      "volume_impact_factor": 0.1,
+      "spread_multiplier": 0.5
+    },
+    "commission_model": {
+      "per_share": 0.005,
+      "minimum_commission": 1.00,
+      "maximum_commission": 50.00
+    }
+  },
+  "technical_indicators": {
+    "rsi_short_period": 5,
+    "rsi_long_period": 14,
+    "volatility_period": 20,
+    "bollinger_bands_period": 20,
+    "bollinger_std_multiplier": 2.0,
+    "vwap_reset_on_session": true
+  },
+  "logging": {
+    "enabled": true,
+    "trade_log_file": "trades.csv",
+    "risk_log_file": "intraday_risk.csv",
+    "performance_log_file": "daily_performance.csv",
+    "log_level": "INFO"
+  },
+  "market_data": {
+    "update_frequency_ms": 1000,
+    "symbols_config": {
+      "SPY": {
+        "starting_price": 450.00,
+        "average_volume_30d": 50000000,
+        "typical_spread_bps": 1.0
+      },
+      "QQQ": {
+        "starting_price": 375.00,
+        "average_volume_30d": 35000000,
+        "typical_spread_bps": 1.2
+      },
+      "AAPL": {
+        "starting_price": 175.00,
+        "average_volume_30d": 40000000,
+        "typical_spread_bps": 1.5
+      }
+    }
+  },
+  "session": {
+    "market_open": "09:30",
+    "market_close": "16:00",
+    "timezone": "America/New_York",
+    "pre_market_enabled": false,
+    "after_hours_enabled": false
+  },
+  "paper_trading": {
+    "enabled": true,
+    "starting_balance": 5000.0,
+    "realistic_fills": true,
+    "commission_simulation": true,
+    "slippage_simulation": true
+  }
+}
