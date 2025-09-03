@@ -1,5 +1,9 @@
 #pragma once
 
+#include <unordered_map>
+#include <string>
+#include <cmath>
+
 #include "real_time_monitor.hpp"
 #include "../messages.hpp"
 #include "../sequencer.hpp"
@@ -59,7 +63,8 @@ public:
                 double mid = (bid + ask) / 2.0;
                 double spread_bps = ((ask - bid) / mid) * 10000.0;
                 
-                std::string symbol = (msg.symbol_id == 1) ? "BTC" : "ETH";
+                // Generic symbol label based on symbol_id to avoid crypto-specific mapping
+                std::string symbol = std::string("SYM") + std::to_string(static_cast<unsigned>(msg.symbol_id));
                 monitor_.update_spread(symbol, msg.venue, spread_bps);
             }
         }
@@ -131,6 +136,14 @@ private:
         switch (venue) {
             case ::hft::Venue::COINBASE: return "Coinbase";
             case ::hft::Venue::BINANCE: return "Binance";
+            case ::hft::Venue::CME: return "CME";
+            case ::hft::Venue::NYSE: return "NYSE";
+            case ::hft::Venue::NASDAQ: return "NASDAQ";
+            case ::hft::Venue::EUREX: return "Eurex";
+            case ::hft::Venue::DERIBIT: return "Deribit";
+            case ::hft::Venue::OKX: return "OKX";
+            case ::hft::Venue::BATS: return "BATS";
+            case ::hft::Venue::ICE: return "ICE";
             default: return "Unknown";
         }
     }
@@ -170,68 +183,6 @@ public:
             hft::Logger::instance().log(hft::LogLevel::CRITICAL, "feed_handler", "Emergency stop detected in feed handler");
             return;
         }
-    }
-};
-
-/**
- * Enhanced arbitrage strategy with monitoring integration
- */
-class MonitoredArbitrageStrategy {
-private:
-    ::hft::ArbitrageStrategy& base_strategy_;
-    MonitoringIntegration& monitor_integration_;
-    RealTimeMonitor& monitor_;
-    
-    // Performance tracking
-    uint64_t last_signal_time_ = 0;
-    uint64_t signal_count_ = 0;
-    
-public:
-    MonitoredArbitrageStrategy(::hft::ArbitrageStrategy& strategy, 
-                              MonitoringIntegration& monitor_integration,
-                              RealTimeMonitor& monitor)
-        : base_strategy_(strategy), monitor_integration_(monitor_integration), monitor_(monitor) {}
-    
-    void process_market_data() {
-        // Check emergency conditions first
-        if (monitor_integration_.check_emergency_conditions()) {
-            hft::Logger::instance().log(hft::LogLevel::WARNING, "strategy", "Trading halted due to emergency conditions");
-            return;
-        }
-        
-        auto latency_tracker = monitor_integration_.track_latency("arbitrage_processing");
-        
-        // Call original processing
-        base_strategy_.process_market_data();
-        
-        // Update monitoring
-        monitor_.component_heartbeat("arbitrage_strategy");
-        monitor_.component_message_processed("arbitrage_strategy");
-    }
-    
-    void record_arbitrage_signal(double expected_edge_bps, double actual_pnl = 0.0) {
-        signal_count_++;
-        uint64_t current_time = ::hft::rdtsc();
-        
-        // Calculate signal frequency
-        if (last_signal_time_ > 0) {
-            uint64_t signal_interval = current_time - last_signal_time_;
-            monitor_.record_latency("signal_generation_interval", last_signal_time_);
-        }
-        
-        last_signal_time_ = current_time;
-        
-        // Record the trade result
-        double estimated_fee = 0.002; // 0.2% round-trip fee
-        monitor_.record_trade(actual_pnl, estimated_fee, 
-                             "Arbitrage signal #" + std::to_string(signal_count_));
-        
-        hft::Logger::instance().log(hft::LogLevel::INFO, "strategy", "Arbitrage signal recorded: " + 
-                                    std::to_string(expected_edge_bps) + " bps edge, $" + std::to_string(actual_pnl) + " P&L");
-    }
-    
-    void print_status() const {
-        base_strategy_.print_status();
     }
 };
 
@@ -301,3 +252,4 @@ public:
 };
 
 } // namespace hft::monitoring
+

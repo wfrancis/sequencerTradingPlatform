@@ -5,7 +5,6 @@
 #include "messages.hpp"
 #include "ring_buffer.hpp"
 #include "sequencer.hpp"
-#include "crypto_config.hpp"
 #include "position_tracker.hpp"
 #include "logger.hpp"
 #include "connection_manager.hpp"

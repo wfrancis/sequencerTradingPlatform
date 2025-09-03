@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Performance and optimization flags
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -march=native -mtune=native -flto")
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fsanitize=address -fsanitize=thread")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fsanitize=address")
 
 # Find optional packages
 find_package(PkgConfig QUIET)
@@ -57,7 +57,6 @@ set(HEADER_FILES
     messages.hpp
     ring_buffer.hpp 
     sequencer.hpp
-    crypto_config.hpp
     feed_handler.hpp
     position_tracker.hpp
     logger.hpp
